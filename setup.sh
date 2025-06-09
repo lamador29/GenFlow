@@ -19,7 +19,7 @@ pip install anvio-8.tar.gz
 rm anvio-8.tar.gz
 pip uninstall matplotlib --yes
 conda install pyani --yes
-pip install matplotlib
+pip install matplotlib==3.7.3
 
 if ! command -v unzip &> /dev/null; then
     sudo apt-get update -qq > /dev/null 2>&1 && sudo apt-get install -y unzip -qq > /dev/null 2>&1;
