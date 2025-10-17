@@ -1,0 +1,44 @@
+configfile: "workflow/config/config.yaml"
+
+# 1) Copiar FASTA y dejar flag
+rule collect_fastas:
+    output:
+        list="results/COLLECT_OK.txt",
+        flag="Intermediate/.collected"
+    script:
+        "pytools/collect_fastas.py"
+
+# 2) Concatenar todos los FASTA copiados
+rule combine_fastas:
+    input:
+        "Intermediate/.collected"
+    output:
+        "results/combined.fasta"
+    script:
+        "pytools/combine_fastas.py"
+
+# 3) Alinear el combinado con MAFFT
+rule align_mafft:
+    input:
+        "results/combined.fasta"
+    output:
+        "results/aligned.fasta"
+    script:
+        "pytools/align_mafft.py"
+
+# 4) Construir árbol con FastTree
+rule build_tree:
+    input:
+        "results/aligned.fasta"
+    output:
+        "results/phylogenomic-tree.txt"
+    script:
+        "pytools/tree_fasttree.py"
+
+# 5) Objetivos finales
+rule all:
+    input:
+        "results/COLLECT_OK.txt",
+        "results/combined.fasta",
+        "results/aligned.fasta",
+        "results/phylogenomic-tree.txt"
