@@ -15,6 +15,8 @@ def main():
     ap.add_argument("--mode", choices=["bacteria","fungi"], default="bacteria")
     ap.add_argument("--outdir", default="results")
     ap.add_argument("--env-root", default=os.path.expanduser("~/.genflow/env"))
+    # opcional: permitir target custom
+    ap.add_argument("--target", default="results/phylogenomic-tree.txt")
     args = ap.parse_args()
 
     cfg = {
@@ -33,9 +35,12 @@ def main():
     (ROOT/"workflow"/"config"/"config.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
 
     snakefile = ROOT/"workflow"/"Snakefile"
-    subprocess.check_call(["snakemake","-s",str(snakefile),
-                           "--cores",str(args.threads),
-                           "--printshellcmds"])
+    subprocess.check_call([
+        "snakemake","-s",str(snakefile),
+        "--cores",str(args.threads),
+        "--printshellcmds",
+        args.target   # 👈 pedimos el árbol por defecto
+    ])
 
 if __name__ == "__main__":
     main()

@@ -5,6 +5,6 @@ G: 0.8
 F: 0.8
 mcl_inflation: 10
 genomes: data/genomes.txt
-fasta: data/A.fasta,data/B.fasta
+fasta: null
 DNA_mode: false
 env_root: /home/laura/.genflow/env
