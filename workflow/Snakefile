@@ -1,44 +1,301 @@
-configfile: "workflow/config/config.yaml"
+# Config
+config_defaults = {
+    "mode": "bacteria",            # "bacteria" or "fungi"
+    "outdir": "results",           
+    "threads": 8,                
+    "G": 0.8,                      
+    "F": 0.8,                      
+    "mcl_inflation": 10,           # MCL inflation (pangenome clustering)
+    "genomes": "data/genomes.txt", # list of NCBI accessions (if NCBI download is enabled)
+    "fasta": None,                 # CSV of input FASTA paths; if None, auto-detects in ./data and ./ (cwd)
+    "DNA_mode": False,             # True = DNA tree (FastTree -nt); False = protein
+    "use_ncbi_download": False,    # enable NCBI datasets+EDirect download block
+    "run_ani": False,              # enable pyANI block (ANI matrix + heatmap assets)
+}
+# Merge defaults
+cfg = {**config_defaults, **config}
 
-# 1) Copiar FASTA y dejar flag
-rule collect_fastas:
-    output:
-        list="results/COLLECT_OK.txt",
-        flag="Intermediate/.collected"
-    script:
-        "pytools/collect_fastas.py"
+import os, glob, shutil, pathlib, subprocess
 
-# 2) Concatenar todos los FASTA copiados
-rule combine_fastas:
-    input:
-        "Intermediate/.collected"
-    output:
-        "results/combined.fasta"
-    script:
-        "pytools/combine_fastas.py"
+# Working directories and folders
+WORKDIR = pathlib.Path(os.getcwd())
+OUTDIR  = WORKDIR / cfg["outdir"]
+INTDIR  = WORKDIR / "Intermediate"
+LOGDIR  = WORKDIR / "logs"
+OUTDIR.mkdir(parents=True, exist_ok=True)
+INTDIR.mkdir(parents=True, exist_ok=True)
+LOGDIR.mkdir(parents=True, exist_ok=True)
 
-# 3) Alinear el combinado con MAFFT
-rule align_mafft:
-    input:
-        "results/combined.fasta"
-    output:
-        "results/aligned.fasta"
-    script:
-        "pytools/align_mafft.py"
+# Helper functions (embedded)
+def find_fastas_from_defaults():
+    """Return a sorted list of FASTA files automatically discovered in ./data and ./ (cwd)."""
+    patterns = ["data/*.fasta", "*.fasta"]
+    files = []
+    for pat in patterns:
+        for f in glob.glob(pat):
+            p = pathlib.Path(f).resolve()
+            if p.exists():
+                files.append(str(p))
+    return sorted(set(files))
 
-# 4) Construir árbol con FastTree
-rule build_tree:
-    input:
-        "results/aligned.fasta"
-    output:
-        "results/phylogenomic-tree.txt"
-    script:
-        "pytools/tree_fasttree.py"
+def copy_fastas(fasta_csv, list_path, flag_path):
+    """Copy input FASTA files into Intermediate/ and write a list + a ready flag."""
+    dest = INTDIR
+    dest.mkdir(exist_ok=True)
 
-# 5) Objetivos finales
+    if fasta_csv:
+        files = []
+        for f in fasta_csv.split(","):
+            p = pathlib.Path(f.strip()).resolve()
+            if p.exists():
+                files.append(str(p))
+    else:
+        files = find_fastas_from_defaults()
+
+    if not files:
+        raise SystemExit(
+            "No FASTA files found. Provide --config fasta='a.fasta,b.fasta' or place *.fasta under ./data or cwd."
+        )
+
+    for f in files:
+        shutil.copy2(f, dest)
+
+    pathlib.Path(list_path).parent.mkdir(parents=True, exist_ok=True)
+    open(list_path, "w").write("\n".join(files) + "\n")
+
+    pathlib.Path(flag_path).parent.mkdir(parents=True, exist_ok=True)
+    pathlib.Path(flag_path).write_text("collected\n")
+
+def combine_fastas(out_fa):
+    """Concatenate all FASTA from Intermediate/ into a single combined FASTA."""
+    out = pathlib.Path(out_fa)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    files = sorted(glob.glob(str(INTDIR / "*.fasta")))
+    if not files:
+        raise SystemExit("No FASTA in Intermediate/. Did collect_fastas run?")
+    with open(out, "w") as OUT:
+        for f in files:
+            with open(f) as IN:
+                txt = IN.read().rstrip()
+                if not txt.endswith("\n"):
+                    txt += "\n"
+                OUT.write(txt)
+
+# Target selection and rule `all`
+# Default “tree” outputs
+tree_target = [
+    f"{cfg['outdir']}/combined.fasta",
+    f"{cfg['outdir']}/aligned.fasta",
+    f"{cfg['outdir']}/phylogenomic-tree.txt",
+    f"{cfg['outdir']}/COLLECT_OK.txt"
+]
+
+# Optional targets (only if enabled through config flags)
+ani_targets   = [f"{cfg['outdir']}/pyANI/ANIm_percentage_identity.tab"]
+anvio_targets = [f"{cfg['outdir']}/Anvio/Filo/Filo-PAN.db"]
+
+# Compose final target list for rule `all`
+all_targets = list(tree_target)
+if cfg["run_ani"]:
+    all_targets += ani_targets
+if cfg["run_anvio"]:
+    all_targets += anvio_targets
+
 rule all:
-    input:
-        "results/COLLECT_OK.txt",
-        "results/combined.fasta",
-        "results/aligned.fasta",
-        "results/phylogenomic-tree.txt"
+    """Top-level target gathering all requested outputs."""
+    input: all_targets
+
+# Collect FASTA into Intermediate/
+rule collect_fastas:
+    """Copy input FASTA into Intermediate/ and write bookkeeping files."""
+    output:
+        list=f"{cfg['outdir']}/COLLECT_OK.txt",
+        flag="Intermediate/.collected"
+    run:
+        copy_fastas(cfg.get("fasta"), output.list, output.flag)
+
+# 2) (Optional) NCBI download of genomes
+# This block is enabled when cfg['use_ncbi_download'] is True.
+# It expects `datasets` (NCBI) and EDirect in PATH.
+use_ncbi = bool(cfg.get("use_ncbi_download", False))
+if use_ncbi:
+    rule ncbi_download:
+        """Download reference genomes using NCBI datasets + unzip to Intermediate/."""
+        input: "Intermediate/.collected"
+        output:
+            touch("logs/download.done")
+        shell: r"""
+            set -euo pipefail
+            datasets download genome accession --inputfile {cfg[genomes]} > logs/download.log 2>&1
+            unzip -o 'ncbi_*.zip'
+            mkdir -p Intermediate
+            mv ncbi_dataset/data/GC*/*.fna Intermediate/ || true
+            rm -rf ncbi_dataset *.zip md5sum.txt README.md || true
+        """
+    # Use the download completion marker as dependency for the next step
+    upstream_flag = "logs/download.done"
+else:
+    upstream_flag = "Intermediate/.collected"
+
+# Combine FASTA (concatenate)
+rule combine_fastas:
+    """Concatenate all FASTA in Intermediate/ into a single combined FASTA."""
+    input: upstream_flag
+    output: f"{cfg['outdir']}/combined.fasta"
+    run:
+        combine_fastas(output[0])
+
+# Multiple sequence alignment (MAFFT)
+rule align_mafft:
+    """Align the combined FASTA using MAFFT (fast settings)."""
+    input: f"{cfg['outdir']}/combined.fasta"
+    output: f"{cfg['outdir']}/aligned.fasta"
+    shell:
+        r"""
+        set -euo pipefail
+        mafft --retree 1 --thread {cfg[threads]} --maxiterate 0 {input} > {output}
+        """
+
+# Phylogenomic tree (FastTree)
+rule build_tree:
+    """Build a phylogenomic tree with FastTree. Uses -nt for DNA mode."""
+    input: f"{cfg['outdir']}/aligned.fasta"
+    output: f"{cfg['outdir']}/phylogenomic-tree.txt"
+    shell:
+        r"""
+        set -euo pipefail
+        {("FastTree -nt" if cfg["DNA_mode"] else "FastTree")} < {input} > {output}
+        """
+
+# ANI with pyANI
+if cfg.get("run_ani", False):
+
+    rule ani_prepare:
+        """Prepare pyANI labels/classes and copy FASTA into a dedicated folder."""
+        input: "Intermediate/.collected"
+        output:
+            classes="results/classes.txt",
+            labels="results/labels.txt",
+            fasta_dir=directory("results/fasta_files")
+        run:
+            import os, glob, shutil, pathlib
+            os.makedirs("results/fasta_files", exist_ok=True)
+            fas = sorted(glob.glob("Intermediate/*.fasta")) + sorted(glob.glob("Intermediate/*.fa"))
+            if not fas:
+                raise SystemExit("No FASTA available for ANI.")
+            for f in fas:
+                dst = pathlib.Path("results/fasta_files") / (pathlib.Path(f).stem + ".fa")
+                shutil.copy2(f, dst)
+            paths = sorted(glob.glob("results/fasta_files/*.fa"))
+            with open(output.classes, "w") as C, open(output.labels, "w") as L:
+                for p in paths:
+                    stem = pathlib.Path(p).stem
+                    C.write(f"{p}\t{stem}\n")
+                    L.write(f"{stem}\n")
+
+    rule ani_run:
+        """Run average_nucleotide_identity.py to compute ANI and export a matrix/figures."""
+        input:
+            classes="results/classes.txt",
+            labels="results/labels.txt",
+            fasta_dir=directory("results/fasta_files")
+        output:
+            "results/pyANI/ANIm_percentage_identity.tab"
+        shell:
+            r"""
+            set -euo pipefail
+            average_nucleotide_identity.py -i results/fasta_files \
+                                           -o results/pyANI \
+                                           --labels {input.labels} \
+                                           --classes {input.classes} \
+                                           -g --gmethod seaborn --gformat svg,png -v -l pyANI.log \
+                                           --workers {cfg[threads]}
+            """
+
+    rule ani_all:
+        """Convenience rule to chain ANI outputs into rule `all` when enabled."""
+        input: "results/pyANI/ANIm_percentage_identity.tab"
+        output: touch("results/.ani.done")
+        shell: "echo 'ANI done' > /dev/null"
+
+# anvi’o pangenome + core
+if cfg.get("run_anvio", False):
+
+    rule anvio_prepare:
+        """Reformat FASTA, create contigs DBs and run HMMs for anvi’o."""
+        input: "Intermediate/.collected"
+        output: touch("logs/anvio_prepare.done")
+        shell:
+            r"""
+            set -euo pipefail
+            for i in Intermediate/*.fasta; do
+                b=$(basename "$i" .fasta)
+                anvi-script-reformat-fasta "$i" -o "Intermediate/${b}.fa" -l 1000 --simplify-names --seq-type NT >> logs/reformat.log 2>&1
+                anvi-gen-contigs-database -f "Intermediate/${b}.fa" -o "Intermediate/${b}.db" -T {cfg[threads]} >> logs/database.log 2>&1
+                anvi-run-hmms -c "Intermediate/${b}.db" -T {cfg[threads]} >> logs/hmms.log 2>&1
+            done
+
+            # Build external-genomes.txt for anvi’o
+            ls -1 Intermediate/*.db > Intermediate/path.txt
+            sed -i '1s/^/contigs_db_path\n/' Intermediate/path.txt
+            ls -1 Intermediate/*.db | sed 's/.db//' > Intermediate/name.txt
+            sed -i 's/[.]/_/g; s/-/_/g; s/,/_/g; s/ /_/g' Intermediate/name.txt
+            sed -i '1s/^/name\n/' Intermediate/name.txt
+            paste Intermediate/name.txt Intermediate/path.txt > Intermediate/external-genomes.txt
+            rm Intermediate/name.txt Intermediate/path.txt
+            """
+
+    rule anvio_pangenome:
+        """Run genomes-storage and pan-genome computation."""
+        input: "logs/anvio_prepare.done"
+        output: directory("results/Anvio/Filo")
+        shell:
+            r"""
+            set -euo pipefail
+            mkdir -p results/Anvio
+            anvi-gen-genomes-storage -e Intermediate/external-genomes.txt -o results/Anvio/Filo-GENOMES.db >> logs/storage.log 2>&1
+            anvi-pan-genome -g results/Anvio/Filo-GENOMES.db --project-name Filo --num-threads {cfg[threads]} --mcl-inflation {cfg[mcl_inflation]} >> logs/pangenome.log 2>&1
+            """
+
+    rule anvio_core_extract:
+        """Extract core gene sequences (DNA and proteins) from the pan-genome."""
+        input:
+            db="results/Anvio/Filo-GENOMES.db",
+            pan="results/Anvio/Filo/Filo-PAN.db"
+        output:
+            dna="results/Anvio/dna-sequences.fasta",
+            prot="results/Anvio/proteins-sequences.fasta"
+        shell:
+            r"""
+            set -euo pipefail
+            NG=$(ls Intermediate/*.fa 2>/dev/null | wc -l || true)
+            # DNA (concatenated core)
+            anvi-get-sequences-for-gene-clusters -g {input.db} -p {input.pan} -o results/Anvio/dna-sequences.fasta \
+                --max-num-genes-from-each-genome 1 \
+                --min-num-genomes-gene-cluster-occurs "$NG" \
+                --concatenate-gene-clusters \
+                --min-geometric-homogeneity-index {cfg[G]} \
+                --min-functional-homogeneity-index {cfg[F]} \
+                --report-DNA-sequences >> logs/core.log 2>&1 || true
+            # Proteins (concatenated core)
+            anvi-get-sequences-for-gene-clusters -g {input.db} -p {input.pan} -o results/Anvio/proteins-sequences.fasta \
+                --max-num-genes-from-each-genome 1 \
+                --min-num-genomes-gene-cluster-occurs "$NG" \
+                --concatenate-gene-clusters \
+                --min-geometric-homogeneity-index {cfg[G]} \
+                --min-functional-homogeneity-index {cfg[F]} >> logs/core.log 2>&1 || true
+            """
+
+    rule anvio_align_tree:
+        """Align core (DNA or protein) and build a phylogenomic tree with FastTree."""
+        input:
+            fasta=lambda wildcards: "results/Anvio/dna-sequences.fasta" if cfg["DNA_mode"] else "results/Anvio/proteins-sequences.fasta"
+        output:
+            "results/Anvio/core-aligned.fasta",
+            "results/Anvio/phylogenomic-tree.txt"
+        shell:
+            r"""
+            set -euo pipefail
+            mafft --retree 1 --thread {cfg[threads]} --maxiterate 0 {input.fasta} > results/Anvio/core-aligned.fasta 2>> logs/mafft_core.log
+            {("FastTree -nt" if cfg["DNA_mode"] else "FastTree")} < results/Anvio/core-aligned.fasta > results/Anvio/phylogenomic-tree.txt 2>> logs/tree_core.log
+            """

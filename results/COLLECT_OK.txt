@@ -1,2 +1,0 @@
-/home/laura/GenFlow/data/A.fasta
-/home/laura/GenFlow/data/B.fasta
