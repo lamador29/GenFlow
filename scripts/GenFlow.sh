@@ -139,15 +139,22 @@ grep -E "^(mode|use_raxml|threads)" "$CONFIG_FILE" || echo "(no mode/thread info
 echo
 
 # Detect FASTA files automatically if not provided
-if [ -z "$fasta" ]; then
-    fasta=$(ls Data/*.fasta 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+if [ -z "$Fasta" ]; then
+    echo "🔍 No FASTA provided with -f, auto-detecting in ./Data..."
+    Fasta=$(ls Data/*.fasta 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+    if [ -z "$Fasta" ]; then
+        echo "No FASTA files found in ./Data."
+        exit 1
+    else
+        echo "Detected FASTA files: $Fasta"
+    fi
 fi
 snakemake -s workflow/Snakefile \
     --cores "$threads" \
     --printshellcmds \
     --rerun-incomplete \
     --config \
-        fasta="$fasta" \
+        fasta="$Fasta" \
         genomes="$genomes" \
         threads="$threads" \
         G="$G" \
