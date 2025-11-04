@@ -1,4 +1,6 @@
 #!/bin/bash
+#  GenFlow Launcher (Snakemake version)
+#  Author: Adapted by Laura Amador
 # Start time
 start_time=$(date +%s)
 
@@ -90,134 +92,54 @@ else
     echo "Using PROTEIN mode"
 fi
 
-# Suppress all output except errors
-exec > /dev/null 2>&1
+############################################################
+# Launch Snakemake                                         #
+############################################################
+echo "Launching GenFlow pipeline via Snakemake..."
+echo
 
-# Set up conda environment and paths
-CONDA_ENV_PATH=$(conda info --base)/envs/$(basename "$CONDA_PREFIX")
-dataset="$CONDA_ENV_PATH/scripts/./datasets"
-esearch="$CONDA_ENV_PATH/scripts/edirect/esearch"
-esummary="$CONDA_ENV_PATH/scripts/edirect/esummary"
-xtract="$CONDA_ENV_PATH/scripts/edirect/xtract"
-rscript="$CONDA_ENV_PATH/scripts/./run_script.sh"
-# Create logs folder
-mkdir -p logs
-
-# Download reference genomes
-"$dataset" download genome accession --inputfile "$genomes" >> logs/download.log 2>&1
-unzip ncbi*
-rm *.zip
-mkdir -p Intermediate
-mv ncbi_dataset/data/GC*/*.fna Intermediate/
-rm -r ncbi_dataset md5sum.txt README.md
-cp "${Fasta[@]}" Intermediate
-cd Intermediate || exit
-
-# Replace names with taxa
-for f in GC* ; do
-    term=$(echo "$f" | cut -f1,2 -d'_')
-    $esearch -db assembly -query "$term" | $esummary | \
-    $xtract -pattern DocumentSummary -sep ' ' -element Organism,Strain,AssemblyAccession | \
-    sed 's/ /_/g; s/://g; s+/+_+g; s/,/_/g; s/[.]/_/g; s/-/_/g; s/_([^)(]*)//; s/=//g; s/[;]//g; s/([^)(]*)//; s/[(]//; s/[)]//'
-done > NEW
-
-# Rename files
-ls -1 *.fna > OLD
-paste OLD NEW | while read -r OLD NEW; do mv "$OLD" "$NEW"; done
-
-for i in *GCF*; do mv "$i" "$i.fasta"; done
-for i in *GCA*; do mv "$i" "$i.fasta"; done
-
-# Reformat fasta and create anvi'o databases
-for i in $(ls -1 *.fasta | sed 's/.fasta//'); do
-    anvi-script-reformat-fasta "$i.fasta" \
-                               -o "$i.fa" \
-                               -l 1000 \
-                               --simplify-names --seq-type NT >> ../logs/reformat.log 2>&1
-    anvi-gen-contigs-database -f "$i.fa" -o "$i.db" -T "$threads" >> ../logs/database.log 2>&1
-    anvi-run-hmms -c "$i.db" -T "$threads" >> ../logs/hmms.log 2>&1    
-done
-
-# Generate external-genomes.txt
-ls -1 *.db > path.txt
-sed -i '1s/^/contigs_db_path\n/' path.txt
-ls -1 *.db | sed 's/.db//' > name.txt
-sed -i 's/[.]/_/g; s/-/_/g; s/,/_/g; s/ /_/g' name.txt
-sed -i '1s/^/name\n/' name.txt
-paste name.txt path.txt > external-genomes.txt
-rm name.txt path.txt
-
-# Generate genomes storage and pan-genome
-anvi-gen-genomes-storage -e external-genomes.txt -o Filo-GENOMES.db >> ../logs/storage.log 2>&1
-anvi-pan-genome -g Filo-GENOMES.db --project-name Filo --num-threads "$threads" --mcl-inflation "$mcl_inflation" >> ../logs/pangenome.log 2>&1
-
-# Get sequences for core genes
-NG=$(ls *.fa | wc -l)
-
-if [ "$DNA_mode" = true ]; then
-    # Ensure --report-DNA-sequences flag is added for DNA mode
-    anvi-get-sequences-for-gene-clusters -g Filo-GENOMES.db -p Filo/Filo-PAN.db -o dna-sequences.fasta \
-                                         --max-num-genes-from-each-genome 1 \
-                                         --min-num-genomes-gene-cluster-occurs "$NG" \
-                                         --concatenate-gene-clusters \
-                                         --min-geometric-homogeneity-index "$G" \
-                                         --min-functional-homogeneity-index "$F" \
-                                         --report-DNA-sequences >> ../logs/core.log 2>&1
+# Activate conda environment if needed
+if [[ -n "$CONDA_DEFAULT_ENV" ]]; then
+    echo "Conda environment detected: $CONDA_DEFAULT_ENV"
 else
-    anvi-get-sequences-for-gene-clusters -g Filo-GENOMES.db -p Filo/Filo-PAN.db -o proteins-sequences.fasta \
-                                         --max-num-genes-from-each-genome 1 \
-                                         --min-num-genomes-gene-cluster-occurs "$NG" \
-                                         --concatenate-gene-clusters \
-                                         --min-geometric-homogeneity-index "$G" \
-                                         --min-functional-homogeneity-index "$F" >> ../logs/core.log 2>&1
+    echo "No active conda environment detected. Please activate GenFlow environment first:"
+    echo "conda activate GenFlow"
+    exit 1
 fi
 
-mkdir -p ../results
+# Ensure directories exist
+mkdir -p results Intermediate logs
 
-# Align sequences and generate phylogenomic tree
-if [ "$DNA_mode" = true ]; then
-    mafft --retree 1 --thread "$threads" --maxiterate 0 dna-sequences.fasta > dna-sequences-aligned.fasta 2>> ../logs/maft.log
-    FastTree -fastest -no2nd -gtr -nt < dna-sequences-aligned.fasta > ../results/phylogenomic-tree.txt 2>> ../logs/tree.log
+# Construct Snakemake command
+snakemake -s workflow/Snakefile \
+    --cores "$threads" \
+    --printshellcmds \
+    --rerun-incomplete \
+    --config \
+        fasta="${Fasta[*]}" \
+        genomes="$genomes" \
+        threads="$threads" \
+        G="$G" \
+        F="$F" \
+        DNA_mode="$DNA_mode" \
+        mcl_inflation="$mcl_inflation"
+
+snakemake_exit=$?
+
+############################################################
+# Check status and show results                            #
+############################################################
+if [ $snakemake_exit -eq 0 ]; then
+    end_time=$(date +%s)
+    duration=$((end_time - start_time))
+    hours=$((duration / 3600))
+    minutes=$(((duration % 3600) / 60))
+    echo
+    echo "GenFlow completed successfully!"
+    echo "Results available in: ./results/"
+    echo "Time elapsed: ${hours}h ${minutes}m"
 else
-    mafft --retree 1 --thread "$threads" --maxiterate 0 proteins-sequences.fasta > proteins-sequences-aligned.fasta 2>> ../logs/maft.log
-    anvi-gen-phylogenomic-tree -f proteins-sequences-aligned.fasta \
-                               -o ../results/phylogenomic-tree.txt 2>> ../logs/tree.log
+    echo
+    echo "Snakemake execution failed. Check logs/ and .snakemake/log/ for details."
+    exit 1
 fi
-
-# Prepare input for ANI analysis
-ls -1 *.fa > path.txt
-ls -1 *.fa | sed 's/.fa//' > name.txt
-sed -i 's/[.]/_/g; s/-/_/g; s/,/_/g; s/ /_/g' name.txt
-paste path.txt name.txt > classes.txt
-cp classes.txt labels.txt
-rm name.txt path.txt
-mkdir fasta_files
-mv *.fa fasta_files
-
-# Perform ANI analysis
-average_nucleotide_identity.py -i fasta_files \
-                               -o pyANI \
-                               --labels labels.txt \
-                               --classes classes.txt \
-                               -g --gmethod seaborn --gformat svg,png -v -l pyANI.log --workers "$threads" >> ../logs/pyANI.log 2>&1
-
-"$rscript" pyANI/ANIm_percentage_identity.tab
-
-#Organize the outputs
-mv heatmap* ../results
-mv *aligned.fasta* ../results
-mkdir Anvio
-mv *.db Anvio/
-mv Filo Anvio/
-rm *
-
-# End time and calculate duration
-end_time=$(date +%s)
-duration=$((end_time - start_time))
-hours=$((duration / 3600))
-minutes=$(((duration % 3600) / 60))
-exec > /dev/tty 2>&1
-
-# Final message
-echo "Your analysis is ready, now you have some pretty phylogenomic plots."
-echo "Time elapsed: ${hours} hour(s) and ${minutes} minute(s)."

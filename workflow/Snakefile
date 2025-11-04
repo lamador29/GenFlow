@@ -29,7 +29,7 @@ LOGDIR.mkdir(parents=True, exist_ok=True)
 # Helper functions (embedded)
 def find_fastas_from_defaults():
     """Return a sorted list of FASTA files automatically discovered in ./data and ./ (cwd)."""
-    patterns = ["data/*.fasta", "*.fasta"]
+    patterns = ["Data/*.fasta", "data/*.fasta", "*.fasta"]
     files = []
     for pat in patterns:
         for f in glob.glob(pat):
@@ -37,7 +37,6 @@ def find_fastas_from_defaults():
             if p.exists():
                 files.append(str(p))
     return sorted(set(files))
-
 def copy_fastas(fasta_csv, list_path, flag_path):
     """Copy input FASTA files into Intermediate/ and write a list + a ready flag."""
     dest = INTDIR
