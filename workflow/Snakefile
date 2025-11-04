@@ -7,7 +7,7 @@ config_defaults = {
     "G": 0.8,
     "F": 0.8,
     "mcl_inflation": 10,           # MCL inflation (pangenome clustering)
-    "genomes": "data/genomes.txt", # list of NCBI accessions (if NCBI download is enabled)
+    "genomes": "Data/genomes.txt", # list of NCBI accessions (if NCBI download is enabled)
     "fasta": None,                 # CSV of input FASTA paths; if None, auto-detects in ./data and ./ (cwd)
     "DNA_mode": False,             # True = DNA tree (FastTree -nt); False = protein
     "use_ncbi_download": False,    # enable NCBI datasets+EDirect download block
@@ -219,11 +219,9 @@ if cfg["mode"] == "bacteria":
         input: "Intermediate/.collected"
         output:
             expand("results/prokka/{sample}/{sample}.gff", sample=SAMPLES)
-        params:
-            wait=60  # latency wait time (seconds)
         shell:
             r"""
-            set -euo pipefail
+            set -euxo pipefail
             mkdir -p results/prokka logs
             echo "Running Prokka annotations..."
             for f in Intermediate/*.fasta; do
@@ -232,19 +230,17 @@ if cfg["mode"] == "bacteria":
                 conda run -n genflow-prokka prokka \
                     --outdir results/prokka/$base \
                     --prefix $base \
-                    --cpus {cfg[threads]} "$f" >> logs/prokka.log 2>&1
+                    --cpus {cfg[threads]} \
+                    --force \
+                    "$f" 2>&1 | tee -a logs/prokka.log
             done
 
-            # Wait to ensure Prokka finished writing files
-            echo "Waiting {params.wait}s for filesystem sync..."
-            sleep {params.wait}
-
-            # List generated files for verification
+            echo "Waiting 30s for filesystem sync..."
+            sleep 30
             echo "Contents of results/prokka:"
             find results/prokka -type f | head -n 20
             echo "Prokka annotations complete."
             """
-
 
     rule pangenome_roary:
         """Run Roary to generate pangenome and core gene alignment (with conda env)."""

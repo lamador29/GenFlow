@@ -34,7 +34,7 @@ Fasta=()
 threads="8"
 G="0.8"
 F="0.8"
-genomes="genomes.txt"  # Default to genomes.txt
+genomes="Data/genomes.txt"  # Default to genomes.txt
 DNA_mode=false  # Default to not using DNA mode
 mcl_inflation=2  # Default inflation value
 
