@@ -149,20 +149,22 @@ if [ -z "$Fasta" ]; then
         echo "Detected FASTA files: $Fasta"
     fi
 fi
+# Convert FASTA array into comma-separated string for Snakemake
+FASTA_CSV=$(IFS=,; echo "${Fasta[*]}")
+
 snakemake -s workflow/Snakefile \
     --cores "$threads" \
     --printshellcmds \
     --rerun-incomplete \
     --latency-wait 60 \
     --config \
-        fasta="$Fasta" \
+        fasta="$FASTA_CSV" \
         genomes="$genomes" \
         threads="$threads" \
         G="$G" \
         F="$F" \
         DNA_mode="$DNA_mode" \
         mcl_inflation="$mcl_inflation"
-
 
 snakemake_exit=$?
 
