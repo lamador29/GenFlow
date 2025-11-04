@@ -228,8 +228,8 @@ if cfg["mode"] == "bacteria":
                 base=$(basename "$f" .fasta)
                 echo "  → Annotating $base"
                 conda run -n genflow-prokka prokka \
-                    --outdir results/prokka/${base} \
-                    --prefix ${base} \
+                    --outdir results/prokka/{{base}} \
+                    --prefix {{base}} \
                     --cpus {cfg[threads]} "$f" >> logs/prokka.log 2>&1
             done
             echo "Prokka annotations complete."
