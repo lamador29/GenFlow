@@ -216,28 +216,28 @@ rule combine_fastas:
 if cfg["mode"] == "bacteria":
     print("Bacterial workflow selected: Prokka -> Roary -> MAFFT -> FastTree/RAxML")
 
-rule annotate_prokka:
-    """Annotate bacterial genomes with Prokka (using dedicated conda env)."""
-    input:
-        "Intermediate/.collected"
-    output:
-        expand("results/prokka/{sample}/{sample}.gff", sample=SAMPLES)
-    shell:
-        r"""
-        set -euxo pipefail
-        mkdir -p results/prokka logs
-        echo "Running Prokka annotations..."
-        for f in Intermediate/*.fasta; do
-            base=$(basename "$f" .fasta)
-            echo "  → Annotating $base"
-            conda run -n genflow-prokka prokka \
-                --outdir results/prokka/$base \
-                --prefix $base \
-                --cpus {cfg[threads]} \
-                --force "$f" 2>&1 | tee -a logs/prokka.log
-        done
-        echo "Prokka annotations complete."
-        """
+    rule annotate_prokka:
+        """Annotate bacterial genomes with Prokka (using dedicated conda env)."""
+        input:
+            "Intermediate/.collected"
+        output:
+            expand("results/prokka/{sample}/{sample}.gff", sample=SAMPLES)
+        shell:
+            r"""
+            set -euxo pipefail
+            mkdir -p results/prokka logs
+            echo "Running Prokka annotations..."
+            for f in Intermediate/*.fasta; do
+                base=$(basename "$f" .fasta)
+                echo "  → Annotating $base"
+                conda run -n genflow-prokka prokka \
+                    --outdir results/prokka/$base \
+                    --prefix $base \
+                    --cpus {cfg[threads]} \
+                    --force "$f" 2>&1 | tee -a logs/prokka.log
+            done
+            echo "Prokka annotations complete."
+            """
 
     rule pangenome_roary:
         input:
