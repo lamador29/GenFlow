@@ -70,7 +70,7 @@ def copy_fastas(fasta_csv, list_path, flag_path):
             if p.exists():
                 files.append(str(p))
             else:
-                print(f"⚠️ Warning: FASTA file not found -> {f.strip()}")
+                print(f"Warning: FASTA file not found -> {f.strip()}")
     else:
         files = find_fastas_from_defaults()
 
