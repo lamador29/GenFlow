@@ -202,7 +202,7 @@ if cfg["mode"] == "bacteria":
     print("Bacterial workflow selected: Prokka -> Roary -> MAFFT -> FastTree/RAxML")
 
     rule annotate_prokka:
-        """Annotate bacterial genomes with Prokka."""
+        """Annotate bacterial genomes with Prokka (using dedicated conda env)."""
         input: "Intermediate/.collected"
         output: directory("results/prokka")
         shell:
@@ -211,15 +211,18 @@ if cfg["mode"] == "bacteria":
             mkdir -p results/prokka
             for f in Intermediate/*.fasta; do
                 base=$(basename "$f" .fasta)
-                prokka --outdir results/prokka/${base} --prefix ${base} --cpus {cfg[threads]} "$f" >> logs/prokka.log 2>&1
+                echo "Running Prokka on $base"
+                conda run -n genflow-prokka prokka \
+                    --outdir results/prokka/${base} \
+                    --prefix ${base} \
+                    --cpus {cfg[threads]} "$f" >> logs/prokka.log 2>&1
             done
             """
-
 
     samples = [pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")]
 
     rule pangenome_roary:
-        """Run Roary to generate pangenome and core gene alignment."""
+        """Run Roary to generate pangenome and core gene alignment (with conda env)."""
         input:
             gffs=expand("results/prokka/{sample}/{sample}.gff",
                         sample=lambda wildcards: [pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")]),
@@ -229,9 +232,13 @@ if cfg["mode"] == "bacteria":
         shell:
             r"""
             set -euo pipefail
-            roary -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1
+            mkdir -p results/roary
+            echo "Running Roary on annotated GFFs..."
+            conda run -n genflow-roary roary \
+                -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1
             cp results/roary/core_gene_alignment.aln {output}
             """
+
 
     rule align_mafft_bacteria:
         """Align Roary core gene alignment with MAFFT (if needed)."""
@@ -240,8 +247,10 @@ if cfg["mode"] == "bacteria":
         shell:
             r"""
             set -euo pipefail
-            mafft --auto --thread {cfg[threads]} {input} > {output}
+            echo "Aligning core genes with MAFFT..."
+            conda run -n genflow-roary mafft --auto --thread {cfg[threads]} {input} > {output}
             """
+
 
 elif cfg["mode"] == "fungi":
     print("Fungal workflow selected: UFCG -> FastTree/RAxML")
@@ -256,18 +265,24 @@ elif cfg["mode"] == "fungi":
             r"""
             set -euo pipefail
             mkdir -p results/ufcg
-            ufcg pipeline -i Intermediate -o results/ufcg --threads {cfg[threads]} >> logs/ufcg.log 2>&1
+            echo "Running UFCG pipeline on fungal genomes..."
+            conda run -n genflow-roary ufcg pipeline \
+                -i Intermediate \
+                -o results/ufcg \
+                --threads {cfg[threads]} >> logs/ufcg.log 2>&1
             """
 
     rule align_ufcg:
-        """Align fungal core genes using MAFFT."""
+        """Align fungal core genes using MAFFT (through Roary env)."""
         input: "results/ufcg/core_genes.faa"
         output: "results/aligned.fasta"
         shell:
             r"""
             set -euo pipefail
-            mafft --auto --thread {cfg[threads]} {input} > {output}
+            echo "Aligning fungal core genes with MAFFT..."
+            conda run -n genflow-roary mafft --auto --thread {cfg[threads]} {input} > {output}
             """
+
 
 # -------------------------------------------------------------------
 # Tree construction (shared between bacteria and fungi)
@@ -278,15 +293,19 @@ rule build_tree:
     input: "results/aligned.fasta"
     output: "results/phylogenomic-tree.txt"
     run:
-        fasttree_cmd = "FastTree -nt" if cfg["DNA_mode"] else "FastTree"
-        raxml_cmd = f"raxml-ng --msa {input} --model GTR+G --threads {cfg['threads']} --tree pars{'' if cfg['DNA_mode'] else ' --datatype AA'} --outgroup 1 --prefix results/raxml_tree"
         if cfg.get("use_raxml", False):
             print("Using RAxML (robust, slower)...")
-            shell(f"{raxml_cmd} > logs/raxml.log 2>&1 || true")
+            shell(
+                f"conda run -n genflow-raxml raxml-ng --msa {input} "
+                f"--model GTR+G --threads {cfg['threads']} "
+                f"--tree pars{' --datatype AA' if not cfg['DNA_mode'] else ''} "
+                f"--outgroup 1 --prefix results/raxml_tree > logs/raxml.log 2>&1 || true"
+            )
             shell("cp results/raxml_tree.raxml.bestTree {output}")
         else:
-            print("Using FastTree (default)...")
-            shell(f"{fasttree_cmd} < {input} > {output}")
+            print('Using FastTree (default)...')
+            fasttree_cmd = "FastTree -nt" if cfg["DNA_mode"] else "FastTree"
+            shell(f"conda run -n genflow-roary {fasttree_cmd} < {input} > {output}")
 
 # ANI with pyANI
 if cfg.get("run_ani", False):
@@ -325,12 +344,15 @@ if cfg.get("run_ani", False):
         shell:
             r"""
             set -euo pipefail
-            average_nucleotide_identity.py -i results/fasta_files \
-                                           -o results/pyANI \
-                                           --labels {input.labels} \
-                                           --classes {input.classes} \
-                                           -g --gmethod seaborn --gformat svg,png -v -l pyANI.log \
-                                           --workers {cfg[threads]}
+            mkdir -p results/pyANI
+            echo "Running pyANI analysis..."
+            conda run -n genflow-download-ani average_nucleotide_identity.py \
+                -i results/fasta_files \
+                -o results/pyANI \
+                --labels {input.labels} \
+                --classes {input.classes} \
+                -g --gmethod seaborn --gformat svg,png -v -l pyANI.log \
+                --workers {cfg[threads]}
             """
 
     rule ani_all:
@@ -343,20 +365,26 @@ if cfg.get("run_ani", False):
 if cfg.get("run_anvio", False):
 
     rule anvio_prepare:
-        """Reformat FASTA, create contigs DBs and run HMMs for anvi’o."""
+        """Reformat FASTA, create contigs DBs and run HMMs for anvio."""
         input: "Intermediate/.collected"
         output: touch("logs/anvio_prepare.done")
         shell:
             r"""
             set -euo pipefail
+            mkdir -p logs
+            echo "Preparing contigs databases for anvio..."
             for i in Intermediate/*.fasta; do
                 b=$(basename "$i" .fasta)
-                anvi-script-reformat-fasta "$i" -o "Intermediate/${b}.fa" -l 1000 --simplify-names --seq-type NT >> logs/reformat.log 2>&1
-                anvi-gen-contigs-database -f "Intermediate/${b}.fa" -o "Intermediate/${b}.db" -T {cfg[threads]} >> logs/database.log 2>&1
-                anvi-run-hmms -c "Intermediate/${b}.db" -T {cfg[threads]} >> logs/hmms.log 2>&1
+                echo "→ Processing $b ..."
+                conda run -n genflow-roary anvi-script-reformat-fasta "$i" \
+                    -o "Intermediate/${b}.fa" -l 1000 --simplify-names --seq-type NT >> logs/reformat.log 2>&1
+                conda run -n genflow-roary anvi-gen-contigs-database \
+                    -f "Intermediate/${b}.fa" -o "Intermediate/${b}.db" -T {cfg[threads]} >> logs/database.log 2>&1
+                conda run -n genflow-roary anvi-run-hmms \
+                    -c "Intermediate/${b}.db" -T {cfg[threads]} >> logs/hmms.log 2>&1
             done
 
-            # Build external-genomes.txt for anvi’o
+            # Build external-genomes.txt for anvio
             ls -1 Intermediate/*.db > Intermediate/path.txt
             sed -i '1s/^/contigs_db_path\n/' Intermediate/path.txt
             ls -1 Intermediate/*.db | sed 's/.db//' > Intermediate/name.txt
@@ -364,6 +392,7 @@ if cfg.get("run_anvio", False):
             sed -i '1s/^/name\n/' Intermediate/name.txt
             paste Intermediate/name.txt Intermediate/path.txt > Intermediate/external-genomes.txt
             rm Intermediate/name.txt Intermediate/path.txt
+            echo "anvio preparation complete."
             """
 
     rule anvio_pangenome:
@@ -374,8 +403,17 @@ if cfg.get("run_anvio", False):
             r"""
             set -euo pipefail
             mkdir -p results/Anvio
-            anvi-gen-genomes-storage -e Intermediate/external-genomes.txt -o results/Anvio/Filo-GENOMES.db >> logs/storage.log 2>&1
-            anvi-pan-genome -g results/Anvio/Filo-GENOMES.db --project-name Filo --num-threads {cfg[threads]} --mcl-inflation {cfg[mcl_inflation]} >> logs/pangenome.log 2>&1
+            echo "Running anvio pangenome analysis..."
+            conda run -n genflow-roary anvi-gen-genomes-storage \
+                -e Intermediate/external-genomes.txt \
+                -o results/Anvio/Filo-GENOMES.db >> logs/storage.log 2>&1
+
+            conda run -n genflow-roary anvi-pan-genome \
+                -g results/Anvio/Filo-GENOMES.db \
+                --project-name Filo \
+                --num-threads {cfg[threads]} \
+                --mcl-inflation {cfg[mcl_inflation]} >> logs/pangenome.log 2>&1
+            echo "anvio pangenome complete."
             """
 
     rule anvio_core_extract:
@@ -390,21 +428,26 @@ if cfg.get("run_anvio", False):
             r"""
             set -euo pipefail
             NG=$(ls Intermediate/*.fa 2>/dev/null | wc -l || true)
+            echo "Extracting core gene clusters from anvio..."
             # DNA (concatenated core)
-            anvi-get-sequences-for-gene-clusters -g {input.db} -p {input.pan} -o results/Anvio/dna-sequences.fasta \
+            conda run -n genflow-roary anvi-get-sequences-for-gene-clusters \
+                -g {input.db} -p {input.pan} -o results/Anvio/dna-sequences.fasta \
                 --max-num-genes-from-each-genome 1 \
                 --min-num-genomes-gene-cluster-occurs "$NG" \
                 --concatenate-gene-clusters \
                 --min-geometric-homogeneity-index {cfg[G]} \
                 --min-functional-homogeneity-index {cfg[F]} \
                 --report-DNA-sequences >> logs/core.log 2>&1 || true
+
             # Proteins (concatenated core)
-            anvi-get-sequences-for-gene-clusters -g {input.db} -p {input.pan} -o results/Anvio/proteins-sequences.fasta \
+            conda run -n genflow-roary anvi-get-sequences-for-gene-clusters \
+                -g {input.db} -p {input.pan} -o results/Anvio/proteins-sequences.fasta \
                 --max-num-genes-from-each-genome 1 \
                 --min-num-genomes-gene-cluster-occurs "$NG" \
                 --concatenate-gene-clusters \
                 --min-geometric-homogeneity-index {cfg[G]} \
                 --min-functional-homogeneity-index {cfg[F]} >> logs/core.log 2>&1 || true
+            echo "anvio core gene extraction complete."
             """
 
     rule anvio_align_tree:
@@ -417,6 +460,13 @@ if cfg.get("run_anvio", False):
         shell:
             r"""
             set -euo pipefail
-            mafft --retree 1 --thread {cfg[threads]} --maxiterate 0 {input.fasta} > results/Anvio/core-aligned.fasta 2>> logs/mafft_core.log
-            {("FastTree -nt" if cfg["DNA_mode"] else "FastTree")} < results/Anvio/core-aligned.fasta > results/Anvio/phylogenomic-tree.txt 2>> logs/tree_core.log
+            echo "Aligning core sequences and building tree with FastTree..."
+            conda run -n genflow-roary mafft --retree 1 --thread {cfg[threads]} --maxiterate 0 {input.fasta} > results/Anvio/core-aligned.fasta 2>> logs/mafft_core.log
+            if [ "{cfg[DNA_mode]}" = "True" ]; then
+                conda run -n genflow-roary FastTree -nt < results/Anvio/core-aligned.fasta > results/Anvio/phylogenomic-tree.txt 2>> logs/tree_core.log
+            else
+                conda run -n genflow-roary FastTree < results/Anvio/core-aligned.fasta > results/Anvio/phylogenomic-tree.txt 2>> logs/tree_core.log
+            fi
+            echo "anvio tree complete."
             """
+

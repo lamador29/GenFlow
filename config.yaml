@@ -12,5 +12,5 @@ use_ncbi_download: false
 run_ani: false
 
 # Organism mode and tree options
-use_raxml: false       # true → RAxML (robust, slower), false → FastTree
+use_raxml: false       # true -> RAxML (robust, slower), false -> FastTree
 mode: "bacteria"       # "bacteria" or "fungi"

@@ -1,0 +1,10 @@
+name: genflow-roary
+channels: [conda-forge, bioconda, defaults]
+dependencies:
+  - roary=3.13.0
+  - mafft=7.526
+  - cd-hit=4.8.1
+  - mcl=14.137
+  - bedtools=2.31.1
+  - fasttree=2.1.11
+  - perl=5.32.*
