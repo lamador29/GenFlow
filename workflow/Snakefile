@@ -188,11 +188,13 @@ rule build_tree:
     """Build a phylogenomic tree with FastTree. Uses -nt for DNA mode."""
     input: f"{cfg['outdir']}/aligned.fasta"
     output: f"{cfg['outdir']}/phylogenomic-tree.txt"
-    shell:
-        r"""
-        set -euo pipefail
-        {("FastTree -nt" if cfg["DNA_mode"] else "FastTree")} < {input} > {output}
-        """
+    run:
+        # Decide which FastTree command to use
+        fasttree_cmd = "FastTree -nt" if cfg["DNA_mode"] else "FastTree"
+        shell(f"""
+            set -euo pipefail
+            {fasttree_cmd} < {input} > {output}
+        """)
 
 # ANI with pyANI
 if cfg.get("run_ani", False):
