@@ -242,23 +242,23 @@ if cfg["mode"] == "bacteria":
             """
 
 
-rule pangenome_roary:
-    input:
-        gffs=rules.annotate_prokka.output.gffs
-    output:
-        "results/core_gene_alignment.aln"
-    shell:
-        r"""
-        set -euo pipefail
-        mkdir -p results/roary logs
-        echo "Running Roary on annotated GFFs..."
+    rule pangenome_roary:
+        input:
+            gffs=rules.annotate_prokka.output.gffs
+        output:
+            "results/core_gene_alignment.aln"
+        shell:
+            r"""
+            set -euo pipefail
+            mkdir -p results/roary logs
+            echo "Running Roary on annotated GFFs..."
 
-        conda run -n genflow-roary roary \
-            -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1
+            conda run -n genflow-roary roary \
+                -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1
 
-        cp results/roary/core_gene_alignment.aln {output}
-        echo "Roary complete."
-        """
+            cp results/roary/core_gene_alignment.aln {output}
+            echo "Roary complete."
+            """
 
     rule align_mafft_bacteria:
         """Align Roary core gene alignment with MAFFT (if needed)."""
