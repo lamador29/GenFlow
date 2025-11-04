@@ -116,7 +116,7 @@ CONFIG_FILE="config/config.yaml"
 
 # Create default config if missing
 if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo "⚙️  No config/config.yaml found — creating default one..."
+    echo "No config/config.yaml found — creating default one..."
     cat > "$CONFIG_FILE" <<'EOF'
 outdir: "results"
 threads: 4
@@ -134,7 +134,7 @@ EOF
 fi
 
 # Print key configuration info
-echo "🔧 Using configuration file: $CONFIG_FILE"
+echo "Using configuration file: $CONFIG_FILE"
 grep -E "^(mode|use_raxml|threads)" "$CONFIG_FILE" || echo "(no mode/thread info found)"
 echo
 
