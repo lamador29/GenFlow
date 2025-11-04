@@ -215,17 +215,20 @@ if cfg["mode"] == "bacteria":
             done
             """
 
+
+    samples = [pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")]
+
     rule pangenome_roary:
         """Run Roary to generate pangenome and core gene alignment."""
         input:
-            gffs=expand("results/prokka/{sample}/{sample}.gff", sample=lambda wildcards: [pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")])
+            gffs=expand("results/prokka/{sample}/{sample}.gff", sample=samples)
         output: "results/core_gene_alignment.aln"
         shell:
             r"""
             set -euo pipefail
             roary -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1
             cp results/roary/core_gene_alignment.aln {output}
-            """
+            """ 
 
     rule align_mafft_bacteria:
         """Align Roary core gene alignment with MAFFT (if needed)."""
