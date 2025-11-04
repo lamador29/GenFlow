@@ -62,11 +62,14 @@ def copy_fastas(fasta_csv, list_path, flag_path):
     if fasta_csv:
         files = []
         for f in fasta_csv.split(","):
-            p = pathlib.Path(f.strip()).resolve()
+            p = pathlib.Path(f.strip())
+            if not p.is_absolute():
+                p = (WORKDIR / p).resolve()
             if p.exists():
                 files.append(str(p))
     else:
         files = find_fastas_from_defaults()
+
 
     if not files:
         raise SystemExit(
