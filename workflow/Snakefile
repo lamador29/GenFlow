@@ -215,35 +215,35 @@ if cfg["mode"] == "bacteria":
     print("Bacterial workflow selected: Prokka -> Roary -> MAFFT -> FastTree/RAxML")
 
     rule annotate_prokka:
-    """Annotate bacterial genomes with Prokka (using dedicated conda env)."""
-    input:
-        "Intermediate/.collected"
-    output:
-        gffs=expand("results/prokka/{sample}/{sample}.gff",
-                    sample=[pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")])
-    shell:
-        r"""
-        set -euxo pipefail
-        mkdir -p results/prokka logs
-        echo "Running Prokka annotations..."
+        """Annotate bacterial genomes with Prokka (using dedicated conda env)."""
+        input:
+            "Intermediate/.collected"
+        output:
+            gffs=expand("results/prokka/{sample}/{sample}.gff",
+                        sample=[pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")])
+        shell:
+            r"""
+            set -euxo pipefail
+            mkdir -p results/prokka logs
+            echo "Running Prokka annotations..."
 
-        for f in Intermediate/*.fasta; do
-            base=$(basename "$f" .fasta)
-            echo "  → Annotating $base"
-            conda run -n genflow-prokka prokka \
-                --outdir results/prokka/$base \
-                --prefix $base \
-                --cpus {cfg[threads]} \
-                --force \
-                "$f" 2>&1 | tee -a logs/prokka.log
-        done
+            for f in Intermediate/*.fasta; do
+                base=$(basename "$f" .fasta)
+                echo "  → Annotating $base"
+                conda run -n genflow-prokka prokka \
+                    --outdir results/prokka/$base \
+                    --prefix $base \
+                    --cpus {cfg[threads]} \
+                    --force \
+                    "$f" 2>&1 | tee -a logs/prokka.log
+            done
 
-        echo "Waiting 30s for filesystem sync..."
-        sleep 30
-        echo "Contents of results/prokka:"
-        find results/prokka -type f | head -n 20
-        echo "Prokka annotations complete."
-        """
+            echo "Waiting 30s for filesystem sync..."
+            sleep 30
+            echo "Contents of results/prokka:"
+            find results/prokka -type f | head -n 20
+            echo "Prokka annotations complete."
+            """
 
 
     rule pangenome_roary:
