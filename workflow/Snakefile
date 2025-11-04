@@ -260,8 +260,6 @@ rule pangenome_roary:
         echo "Roary complete."
         """
 
-
-
     rule align_mafft_bacteria:
         """Align Roary core gene alignment with MAFFT (if needed)."""
         input: "results/core_gene_alignment.aln"
