@@ -66,7 +66,7 @@ def find_fastas_from_defaults():
     return sorted(set(files))
 
 def copy_fastas(fasta_csv, list_path, flag_path):
-    """Copy input FASTA files into Intermediate/ and write a list + a ready flag."""
+    """Copy input FASTA files into Intermediate/ and write bookkeeping files."""
     dest = INTDIR
     dest.mkdir(exist_ok=True)
 
@@ -76,7 +76,6 @@ def copy_fastas(fasta_csv, list_path, flag_path):
         for f in fasta_csv.split(","):
             p = pathlib.Path(f.strip())
             if not p.exists():
-                # Try resolving relative to WORKDIR if not found
                 p = (WORKDIR / f.strip()).resolve()
             if p.exists():
                 files.append(str(p))
@@ -85,22 +84,15 @@ def copy_fastas(fasta_csv, list_path, flag_path):
     else:
         files = find_fastas_from_defaults()
 
-    # Stop if no FASTA files were found
     if not files:
-        raise SystemExit(
-            "No FASTA files found. Place *.fasta under ./Data or cwd."
-        )
+        raise SystemExit("No FASTA files found. Place *.fasta under ./Data or cwd.")
 
-    # Copy all found files into Intermediate/
     for f in files:
         shutil.copy2(f, dest)
 
-    # Write bookkeeping files
-    pathlib.Path(list_path).parent.mkdir(parents=True, exist_ok=True)
     with open(list_path, "w") as out:
         out.write("\n".join(files) + "\n")
 
-    pathlib.Path(flag_path).parent.mkdir(parents=True, exist_ok=True)
     pathlib.Path(flag_path).write_text("collected\n")
 
 
