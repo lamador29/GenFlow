@@ -1,10 +1,13 @@
 name: genflow-download-ani
 channels:
-  - conda-forge
   - bioconda
+  - conda-forge
   - defaults
 dependencies:
-  - python=3.10
+  - python=3.8
+  - pyani=0.2.12
+  - mummer
+  - blast
   - pandas
   - seaborn
   - matplotlib
@@ -12,7 +15,3 @@ dependencies:
   - r-ggplot2
   - ncbi-datasets-cli
   - entrez-direct
-  - pip
-  - git
-  - pip:
-      - git+https://github.com/widdowquinn/pyani.git
