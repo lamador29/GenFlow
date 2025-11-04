@@ -219,6 +219,8 @@ if cfg["mode"] == "bacteria":
         input: "Intermediate/.collected"
         output:
             expand("results/prokka/{sample}/{sample}.gff", sample=SAMPLES)
+        params:
+            wait=60  # latency wait time (seconds)
         shell:
             r"""
             set -euo pipefail
@@ -228,12 +230,21 @@ if cfg["mode"] == "bacteria":
                 base=$(basename "$f" .fasta)
                 echo "  → Annotating $base"
                 conda run -n genflow-prokka prokka \
-                    --outdir results/prokka/{{base}} \
-                    --prefix {{base}} \
+                    --outdir results/prokka/$base \
+                    --prefix $base \
                     --cpus {cfg[threads]} "$f" >> logs/prokka.log 2>&1
             done
+
+            # Wait to ensure Prokka finished writing files
+            echo "Waiting {params.wait}s for filesystem sync..."
+            sleep {params.wait}
+
+            # List generated files for verification
+            echo "Contents of results/prokka:"
+            find results/prokka -type f | head -n 20
             echo "Prokka annotations complete."
             """
+
 
     rule pangenome_roary:
         """Run Roary to generate pangenome and core gene alignment (with conda env)."""
