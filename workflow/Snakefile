@@ -59,31 +59,39 @@ def copy_fastas(fasta_csv, list_path, flag_path):
     dest = INTDIR
     dest.mkdir(exist_ok=True)
 
+    files = []
     if fasta_csv:
-        files = []
+        # Split by comma, strip spaces, and resolve both relative and absolute paths
         for f in fasta_csv.split(","):
             p = pathlib.Path(f.strip())
-            if not p.is_absolute():
-                p = (WORKDIR / p).resolve()
+            if not p.exists():
+                # Try resolving relative to WORKDIR if not found
+                p = (WORKDIR / f.strip()).resolve()
             if p.exists():
                 files.append(str(p))
+            else:
+                print(f"⚠️ Warning: FASTA file not found -> {f.strip()}")
     else:
         files = find_fastas_from_defaults()
 
-
+    # Stop if no FASTA files were found
     if not files:
         raise SystemExit(
-            "No FASTA files found. Provide --config fasta='a.fasta,b.fasta' or place *.fasta under ./data or cwd."
+            "No FASTA files found. Provide --config fasta='a.fasta,b.fasta' or place *.fasta under ./Data or cwd."
         )
 
+    # Copy all found files into Intermediate/
     for f in files:
         shutil.copy2(f, dest)
 
+    # Write bookkeeping files
     pathlib.Path(list_path).parent.mkdir(parents=True, exist_ok=True)
-    open(list_path, "w").write("\n".join(files) + "\n")
+    with open(list_path, "w") as out:
+        out.write("\n".join(files) + "\n")
 
     pathlib.Path(flag_path).parent.mkdir(parents=True, exist_ok=True)
     pathlib.Path(flag_path).write_text("collected\n")
+
 
 def combine_fastas(out_fa):
     """Concatenate all FASTA from Intermediate/ into a single combined FASTA."""
