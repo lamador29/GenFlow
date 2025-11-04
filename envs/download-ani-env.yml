@@ -1,7 +1,7 @@
 name: genflow-download-ani
 channels:
-  - bioconda
   - conda-forge
+  - bioconda
   - defaults
 dependencies:
   - python=3.10
@@ -12,5 +12,7 @@ dependencies:
   - r-ggplot2
   - ncbi-datasets-cli
   - entrez-direct
-  - pyani=0.3.0
   - pip
+  - git
+  - pip:
+      - git+https://github.com/widdowquinn/pyani.git@v0.3.0
