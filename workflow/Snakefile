@@ -184,15 +184,15 @@ rule combine_fastas:
         combine_fastas(output[0])
 
 # Multiple sequence alignment (MAFFT)
-rule align_mafft:
-    """Align the combined FASTA using MAFFT (fast settings)."""
-    input: f"{cfg['outdir']}/combined.fasta"
-    output: f"{cfg['outdir']}/aligned.fasta"
-    shell:
-        r"""
-        set -euo pipefail
-        mafft --retree 1 --thread {cfg[threads]} --maxiterate 0 {input} > {output}
-        """
+# rule align_mafft:
+#     """Align the combined FASTA using MAFFT (fast settings)."""
+#     input: f"{cfg['outdir']}/combined.fasta"
+#     output: f"{cfg['outdir']}/aligned.fasta"
+#     shell:
+#         r"""
+#         set -euo pipefail
+#         mafft --retree 1 --thread {cfg[threads]} --maxiterate 0 {input} > {output}
+#         """
 
 # -------------------------------------------------------------------
 # Organism-specific workflow: Bacteria vs Fungi
