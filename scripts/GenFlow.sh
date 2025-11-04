@@ -138,15 +138,16 @@ echo "Using configuration file: $CONFIG_FILE"
 grep -E "^(mode|use_raxml|threads)" "$CONFIG_FILE" || echo "(no mode/thread info found)"
 echo
 
-# Launch Snakemake with automatic config
+# Detect FASTA files automatically if not provided
+if [ -z "$fasta" ]; then
+    fasta=$(ls Data/*.fasta 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+fi
 snakemake -s workflow/Snakefile \
-    --configfile "$CONFIG_FILE" \
     --cores "$threads" \
     --printshellcmds \
     --rerun-incomplete \
-    --keep-going \
     --config \
-        fasta="$(IFS=,; echo "${Fasta[*]}")" \
+        fasta="$fasta" \
         genomes="$genomes" \
         threads="$threads" \
         G="$G" \
