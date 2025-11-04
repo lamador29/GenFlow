@@ -153,6 +153,7 @@ snakemake -s workflow/Snakefile \
     --cores "$threads" \
     --printshellcmds \
     --rerun-incomplete \
+    --latency-wait 60 \
     --config \
         fasta="$Fasta" \
         genomes="$genomes" \
@@ -161,6 +162,7 @@ snakemake -s workflow/Snakefile \
         F="$F" \
         DNA_mode="$DNA_mode" \
         mcl_inflation="$mcl_inflation"
+
 
 snakemake_exit=$?
 
