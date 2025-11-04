@@ -1,4 +1,5 @@
 # Config
+config = globals().get("config", {})
 config_defaults = {
     "mode": "bacteria",            # "bacteria" or "fungi"
     "outdir": "results",           
@@ -13,7 +14,10 @@ config_defaults = {
     "run_ani": False,              # enable pyANI block (ANI matrix + heatmap assets)
 }
 # Merge defaults
-cfg = {**config_defaults, **config}
+for key, value in config_defaults.items():
+    if key not in config:
+        config[key] = value
+cfg = config
 
 import os, glob, shutil, pathlib, subprocess
 
@@ -26,6 +30,18 @@ OUTDIR.mkdir(parents=True, exist_ok=True)
 INTDIR.mkdir(parents=True, exist_ok=True)
 LOGDIR.mkdir(parents=True, exist_ok=True)
 
+# Print configuration summary
+print("GenFlow Snakemake Pipeline starting...")
+print(f"Mode: {'DNA' if cfg['DNA_mode'] else 'Protein'}")
+print(f"Threads: {cfg['threads']}")
+print(f"FASTA input(s): {cfg['fasta']}")
+print(f"Genomes file: {cfg['genomes']}")
+print(f"Geometric Index (G): {cfg['G']}")
+print(f"Functional Index (F): {cfg['F']}")
+print(f"MCL Inflation: {cfg['mcl_inflation']}")
+print(f"Output directory: {cfg['outdir']}")
+print("-------------------------------------------------------------")
+
 # Helper functions (embedded)
 def find_fastas_from_defaults():
     """Return a sorted list of FASTA files automatically discovered in ./data and ./ (cwd)."""
@@ -37,6 +53,7 @@ def find_fastas_from_defaults():
             if p.exists():
                 files.append(str(p))
     return sorted(set(files))
+
 def copy_fastas(fasta_csv, list_path, flag_path):
     """Copy input FASTA files into Intermediate/ and write a list + a ready flag."""
     dest = INTDIR
@@ -95,9 +112,9 @@ anvio_targets = [f"{cfg['outdir']}/Anvio/Filo/Filo-PAN.db"]
 
 # Compose final target list for rule `all`
 all_targets = list(tree_target)
-if cfg["run_ani"]:
+if cfg.get("run_ani", False):
     all_targets += ani_targets
-if cfg["run_anvio"]:
+if cfg.get("run_anvio", False):
     all_targets += anvio_targets
 
 rule all:

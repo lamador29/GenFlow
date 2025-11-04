@@ -1,6 +1,8 @@
 #!/bin/bash
 #  GenFlow Launcher (Snakemake version)
-#  Author: Adapted by Laura Amador
+#  Adapted by Laura Amador
+
+cd "$(dirname "$0")/.." || exit 1
 # Start time
 start_time=$(date +%s)
 

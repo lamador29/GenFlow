@@ -1,0 +1,8 @@
+# List of NCBI genome accessions to download (one per line)
+# Example: GCF_000005845.2 = Escherichia coli K-12 MG1655
+#          GCF_000006945.2 = Bacillus subtilis 168
+#          GCF_000007445.1 = Staphylococcus aureus NCTC 8325
+
+GCF_000005845.2
+GCF_000006945.2
+GCF_000007445.1
