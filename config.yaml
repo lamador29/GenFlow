@@ -1,0 +1,16 @@
+# GenFlow Execution Configuration (used by Snakemake)
+
+outdir: "results"
+threads: 8
+G: 0.8
+F: 0.8
+mcl_inflation: 10
+genomes: "Data/genomes.txt"
+fasta: null
+DNA_mode: false
+use_ncbi_download: false
+run_ani: false
+
+# Organism mode and tree options
+use_raxml: false       # true → RAxML (robust, slower), false → FastTree
+mode: "bacteria"       # "bacteria" or "fungi"

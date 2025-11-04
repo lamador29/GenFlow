@@ -109,16 +109,44 @@ else
     exit 1
 fi
 
-# Ensure directories exist
-mkdir -p results Intermediate logs
+# Ensure directories and configuration exist
+mkdir -p results Intermediate logs config
 
-# Construct Snakemake command
+CONFIG_FILE="config/config.yaml"
+
+# Create default config if missing
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "⚙️  No config/config.yaml found — creating default one..."
+    cat > "$CONFIG_FILE" <<'EOF'
+outdir: "results"
+threads: 4
+G: 0.8
+F: 0.8
+mcl_inflation: 10
+genomes: "Data/genomes.txt"
+fasta: null
+DNA_mode: false
+use_ncbi_download: false
+run_ani: false
+use_raxml: false
+mode: "bacteria"
+EOF
+fi
+
+# Print key configuration info
+echo "🔧 Using configuration file: $CONFIG_FILE"
+grep -E "^(mode|use_raxml|threads)" "$CONFIG_FILE" || echo "(no mode/thread info found)"
+echo
+
+# Launch Snakemake with automatic config
 snakemake -s workflow/Snakefile \
+    --configfile "$CONFIG_FILE" \
     --cores "$threads" \
     --printshellcmds \
     --rerun-incomplete \
+    --keep-going \
     --config \
-        fasta="$(IFS=,; echo "${Fasta[*]}")"
+        fasta="$(IFS=,; echo "${Fasta[*]}")" \
         genomes="$genomes" \
         threads="$threads" \
         G="$G" \

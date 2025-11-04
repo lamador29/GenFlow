@@ -2,10 +2,10 @@
 config = globals().get("config", {})
 config_defaults = {
     "mode": "bacteria",            # "bacteria" or "fungi"
-    "outdir": "results",           
-    "threads": 8,                
-    "G": 0.8,                      
-    "F": 0.8,                      
+    "outdir": "results",
+    "threads": 8,
+    "G": 0.8,
+    "F": 0.8,
     "mcl_inflation": 10,           # MCL inflation (pangenome clustering)
     "genomes": "data/genomes.txt", # list of NCBI accessions (if NCBI download is enabled)
     "fasta": None,                 # CSV of input FASTA paths; if None, auto-detects in ./data and ./ (cwd)
@@ -13,7 +13,8 @@ config_defaults = {
     "use_ncbi_download": False,    # enable NCBI datasets+EDirect download block
     "run_ani": False,              # enable pyANI block (ANI matrix + heatmap assets)
 }
-# Merge defaults
+
+# Merge defaults with user config
 for key, value in config_defaults.items():
     if key not in config:
         config[key] = value
@@ -30,7 +31,9 @@ OUTDIR.mkdir(parents=True, exist_ok=True)
 INTDIR.mkdir(parents=True, exist_ok=True)
 LOGDIR.mkdir(parents=True, exist_ok=True)
 
-# Print configuration summary
+# -------------------------------------------------------------------
+# Configuration summary and mode validation
+# -------------------------------------------------------------------
 print("GenFlow Snakemake Pipeline starting...")
 print(f"Mode: {'DNA' if cfg['DNA_mode'] else 'Protein'}")
 print(f"Threads: {cfg['threads']}")
@@ -40,6 +43,14 @@ print(f"Geometric Index (G): {cfg['G']}")
 print(f"Functional Index (F): {cfg['F']}")
 print(f"MCL Inflation: {cfg['mcl_inflation']}")
 print(f"Output directory: {cfg['outdir']}")
+print("-------------------------------------------------------------")
+
+# Validate organismal mode (bacteria/fungi)
+if cfg["mode"].lower() not in ["bacteria", "fungi"]:
+    print(f"Warning: Unknown mode '{cfg['mode']}'. Defaulting to 'bacteria'.")
+    cfg["mode"] = "bacteria"
+
+print(f"Organismal mode: {cfg['mode'].capitalize()}")
 print("-------------------------------------------------------------")
 
 # Helper functions (embedded)
@@ -77,7 +88,7 @@ def copy_fastas(fasta_csv, list_path, flag_path):
     # Stop if no FASTA files were found
     if not files:
         raise SystemExit(
-            "No FASTA files found. Provide --config fasta='a.fasta,b.fasta' or place *.fasta under ./Data or cwd."
+            "No FASTA files found. Place *.fasta under ./Data or cwd."
         )
 
     # Copy all found files into Intermediate/
@@ -182,6 +193,95 @@ rule align_mafft:
         set -euo pipefail
         mafft --retree 1 --thread {cfg[threads]} --maxiterate 0 {input} > {output}
         """
+
+# -------------------------------------------------------------------
+# Organism-specific workflow: Bacteria vs Fungi
+# -------------------------------------------------------------------
+
+if cfg["mode"] == "bacteria":
+    print("Bacterial workflow selected: Prokka -> Roary -> MAFFT -> FastTree/RAxML")
+
+    rule annotate_prokka:
+        """Annotate bacterial genomes with Prokka."""
+        input: "Intermediate/.collected"
+        output: directory("results/prokka")
+        shell:
+            r"""
+            set -euo pipefail
+            mkdir -p results/prokka
+            for f in Intermediate/*.fasta; do
+                base=$(basename "$f" .fasta)
+                prokka --outdir results/prokka/${base} --prefix ${base} --cpus {cfg[threads]} "$f" >> logs/prokka.log 2>&1
+            done
+            """
+
+    rule pangenome_roary:
+        """Run Roary to generate pangenome and core gene alignment."""
+        input:
+            gffs=expand("results/prokka/{sample}/{sample}.gff", sample=lambda wildcards: [pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")])
+        output: "results/core_gene_alignment.aln"
+        shell:
+            r"""
+            set -euo pipefail
+            roary -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1
+            cp results/roary/core_gene_alignment.aln {output}
+            """
+
+    rule align_mafft_bacteria:
+        """Align Roary core gene alignment with MAFFT (if needed)."""
+        input: "results/core_gene_alignment.aln"
+        output: "results/aligned.fasta"
+        shell:
+            r"""
+            set -euo pipefail
+            mafft --auto --thread {cfg[threads]} {input} > {output}
+            """
+
+elif cfg["mode"] == "fungi":
+    print("Fungal workflow selected: UFCG -> FastTree/RAxML")
+
+    rule run_ufcg:
+        """Identify core fungal genes using the UFCG toolkit."""
+        input: "Intermediate/.collected"
+        output:
+            faa="results/ufcg/core_genes.faa",
+            fna="results/ufcg/core_genes.fna"
+        shell:
+            r"""
+            set -euo pipefail
+            mkdir -p results/ufcg
+            ufcg pipeline -i Intermediate -o results/ufcg --threads {cfg[threads]} >> logs/ufcg.log 2>&1
+            """
+
+    rule align_ufcg:
+        """Align fungal core genes using MAFFT."""
+        input: "results/ufcg/core_genes.faa"
+        output: "results/aligned.fasta"
+        shell:
+            r"""
+            set -euo pipefail
+            mafft --auto --thread {cfg[threads]} {input} > {output}
+            """
+
+# -------------------------------------------------------------------
+# Tree construction (shared between bacteria and fungi)
+# -------------------------------------------------------------------
+
+rule build_tree:
+    """Build a phylogenomic tree using FastTree or RAxML."""
+    input: "results/aligned.fasta"
+    output: "results/phylogenomic-tree.txt"
+    run:
+        fasttree_cmd = "FastTree -nt" if cfg["DNA_mode"] else "FastTree"
+        raxml_cmd = f"raxml-ng --msa {input} --model GTR+G --threads {cfg['threads']} --tree pars{'' if cfg['DNA_mode'] else ' --datatype AA'} --outgroup 1 --prefix results/raxml_tree"
+        if cfg.get("use_raxml", False):
+            print("Using RAxML (robust, slower)...")
+            shell(f"{raxml_cmd} > logs/raxml.log 2>&1 || true")
+            shell("cp results/raxml_tree.raxml.bestTree {output}")
+        else:
+            print("Using FastTree (default)...")
+            shell(f"{fasttree_cmd} < {input} > {output}")
+
 
 # Phylogenomic tree (FastTree)
 rule build_tree:
