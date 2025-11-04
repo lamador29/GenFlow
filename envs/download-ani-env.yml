@@ -15,4 +15,4 @@ dependencies:
   - pip
   - git
   - pip:
-      - git+https://github.com/widdowquinn/pyani.git@v0.3.0
+      - git+https://github.com/widdowquinn/pyani.git
