@@ -22,6 +22,10 @@ cfg = config
 
 import os, glob, shutil, pathlib, subprocess
 
+# Detect sample names dynamically
+SAMPLES = [pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")] or \
+          [pathlib.Path(f).stem for f in glob.glob("Data/*.fasta")]
+
 # Working directories and folders
 WORKDIR = pathlib.Path(os.getcwd())
 OUTDIR  = WORKDIR / cfg["outdir"]
@@ -124,14 +128,14 @@ def _get_sample_stems():
 SAMPLES = _get_sample_stems()
 
 
-# Target selection and rule `all`
 # Default “tree” outputs
 tree_target = [
     f"{cfg['outdir']}/combined.fasta",
     f"{cfg['outdir']}/aligned.fasta",
     f"{cfg['outdir']}/phylogenomic-tree.txt",
-    f"{cfg['outdir']}/COLLECT_OK.txt"
-]
+    f"{cfg['outdir']}/COLLECT_OK.txt",
+] + [f"results/prokka/{s}/{s}.gff" for s in SAMPLES]
+
 
 # Optional targets (only if enabled through config flags)
 ani_targets   = [f"{cfg['outdir']}/pyANI/ANIm_percentage_identity.tab"]
@@ -238,24 +242,24 @@ if cfg["mode"] == "bacteria":
             """
 
 
-    rule pangenome_roary:
-        """Run Roary to generate pangenome and core gene alignment (with conda env)."""
-        input:
-            gffs=rules.annotate_prokka.output.gffs
-        output:
-            "results/core_gene_alignment.aln"
-        shell:
-            r"""
-            set -euo pipefail
-            mkdir -p results/roary logs
-            echo "Running Roary on annotated GFFs..."
+rule pangenome_roary:
+    input:
+        gffs=rules.annotate_prokka.output.gffs
+    output:
+        "results/core_gene_alignment.aln"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p results/roary logs
+        echo "Running Roary on annotated GFFs..."
 
-            conda run -n genflow-roary roary \
-                -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1
+        conda run -n genflow-roary roary \
+            -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1
 
-            cp results/roary/core_gene_alignment.aln {output}
-            echo "Roary complete."
-            """
+        cp results/roary/core_gene_alignment.aln {output}
+        echo "Roary complete."
+        """
+
 
 
     rule align_mafft_bacteria:
