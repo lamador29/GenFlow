@@ -118,7 +118,7 @@ snakemake -s workflow/Snakefile \
     --printshellcmds \
     --rerun-incomplete \
     --config \
-        fasta="${Fasta[*]}" \
+        fasta="$(IFS=,; echo "${Fasta[*]}")"
         genomes="$genomes" \
         threads="$threads" \
         G="$G" \
