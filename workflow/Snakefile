@@ -22,9 +22,16 @@ cfg = config
 
 import os, glob, shutil, pathlib, subprocess
 
-# Detect sample names dynamically
-SAMPLES = [pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")] or \
-          [pathlib.Path(f).stem for f in glob.glob("Data/*.fasta")]
+# Dynamically detect samples right before annotation
+def detect_samples():
+    import glob, pathlib
+    samples = [pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")]
+    if not samples:
+        print("Warning: No FASTA files detected yet in Intermediate/.")
+    return sorted(samples)
+
+SAMPLES = detect_samples()
+
 
 # Working directories and folders
 WORKDIR = pathlib.Path(os.getcwd())
@@ -39,23 +46,7 @@ LOGDIR.mkdir(parents=True, exist_ok=True)
 # Configuration summary and mode validation
 # -------------------------------------------------------------------
 print("GenFlow Snakemake Pipeline starting...")
-print(f"Mode: {'DNA' if cfg['DNA_mode'] else 'Protein'}")
-print(f"Threads: {cfg['threads']}")
-print(f"FASTA input(s): {cfg['fasta']}")
-print(f"Genomes file: {cfg['genomes']}")
-print(f"Geometric Index (G): {cfg['G']}")
-print(f"Functional Index (F): {cfg['F']}")
-print(f"MCL Inflation: {cfg['mcl_inflation']}")
-print(f"Output directory: {cfg['outdir']}")
-print("-------------------------------------------------------------")
 
-# Validate organismal mode (bacteria/fungi)
-if cfg["mode"].lower() not in ["bacteria", "fungi"]:
-    print(f"Warning: Unknown mode '{cfg['mode']}'. Defaulting to 'bacteria'.")
-    cfg["mode"] = "bacteria"
-
-print(f"Organismal mode: {cfg['mode'].capitalize()}")
-print("-------------------------------------------------------------")
 
 # Helper functions (embedded)
 def find_fastas_from_defaults():
@@ -92,7 +83,15 @@ def copy_fastas(fasta_csv, list_path, flag_path):
         raise SystemExit("No FASTA files found. Place *.fasta under ./Data or cwd.")
 
     for f in files:
-        shutil.copy2(f, dest)
+        sample = pathlib.Path(f).stem
+        dest_path = dest / f"{sample}.fasta"
+        src_path = pathlib.Path(f)
+        if not src_path.exists():
+            src_path = (WORKDIR / f).resolve()
+        if src_path.exists() and src_path.is_file() and src_path.stat().st_size > 0:
+            shutil.copy2(src_path, dest_path)
+        else:
+            print(f"Warning: FASTA file not found or empty -> {src_path}")
 
     with open(list_path, "w") as out:
         out.write("\n".join(files) + "\n")
@@ -153,17 +152,26 @@ rule all:
     input: all_targets
 
 # Collect FASTA into Intermediate/
+
 rule collect_fastas:
     """Copy input FASTA into Intermediate/ and write bookkeeping files."""
     output:
         list=f"{cfg['outdir']}/COLLECT_OK.txt",
-        flag="Intermediate/.collected"
+        flag="Intermediate/.collected",
+        fastas=expand(
+            "Intermediate/{sample}.fasta",
+            sample=[pathlib.Path(f).stem for f in str(cfg.get("fasta", "")).split(",") if f.strip()]
+        )
     run:
         copy_fastas(cfg.get("fasta"), output.list, output.flag)
 
 # Dynamically detect samples after FASTA collection
-SAMPLES = [pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")]
-print(f"Detected samples for annotation: {SAMPLES}")
+
+def get_samples():
+    import glob, pathlib
+    return sorted([pathlib.Path(f).stem for f in glob.glob("Intermediate/*.fasta")])
+
+print(f"Detected samples for annotation: {get_samples()}")
 
 
 
@@ -171,44 +179,38 @@ print(f"Detected samples for annotation: {SAMPLES}")
 # This block is enabled when cfg['use_ncbi_download'] is True.
 # It expects `datasets` (NCBI) and EDirect in PATH.
 use_ncbi = bool(cfg.get("use_ncbi_download", False))
+
 if use_ncbi:
     rule ncbi_download:
         """Download reference genomes using NCBI datasets + unzip to Intermediate/."""
-        input: "Intermediate/.collected"
+        input:
+            "Intermediate/.collected"
         output:
             touch("logs/download.done")
-        shell: r"""
+        shell:
+            r"""
             set -euo pipefail
-            datasets download genome accession --inputfile {cfg[genomes]} > logs/download.log 2>&1
-            unzip -o 'ncbi_*.zip'
+            echo "Downloading genomes from NCBI..."
+            conda run -n genflow-download-ani datasets download genome accession \
+                --inputfile {cfg[genomes]} > logs/download.log 2>&1
+            unzip -o 'ncbi_*.zip' >> logs/download.log 2>&1
             mkdir -p Intermediate
             mv ncbi_dataset/data/GC*/*.fna Intermediate/ || true
             rm -rf ncbi_dataset *.zip md5sum.txt README.md || true
-        """
-    # Use the download completion marker as dependency for the next step
+            echo "NCBI genome download complete."
+            """
     upstream_flag = "logs/download.done"
 else:
     upstream_flag = "Intermediate/.collected"
 
-# Combine FASTA (concatenate)
 rule combine_fastas:
     """Concatenate all FASTA in Intermediate/ into a single combined FASTA."""
-    input: upstream_flag
-    output: f"{cfg['outdir']}/combined.fasta"
+    input:
+        upstream_flag
+    output:
+        f"{cfg['outdir']}/combined.fasta"
     run:
         combine_fastas(output[0])
-
-# Multiple sequence alignment (MAFFT)
-# rule align_mafft:
-#     """Align the combined FASTA using MAFFT (fast settings)."""
-#     input: f"{cfg['outdir']}/combined.fasta"
-#     output: f"{cfg['outdir']}/aligned.fasta"
-#     shell:
-#         r"""
-#         set -euo pipefail
-#         mafft --retree 1 --thread {cfg[threads]} --maxiterate 0 {input} > {output}
-#         """
-
 # -------------------------------------------------------------------
 # Organism-specific workflow: Bacteria vs Fungi
 # -------------------------------------------------------------------
@@ -219,15 +221,16 @@ if cfg["mode"] == "bacteria":
     rule annotate_prokka:
         """Annotate bacterial genomes with Prokka (using dedicated conda env)."""
         input:
-            "Intermediate/.collected"
+            fastas=expand("Intermediate/{sample}.fasta", sample=[pathlib.Path(f).stem for f in str(cfg.get("fasta", "")).split(",") if f.strip()]),
+            flag="Intermediate/.collected"
         output:
-            expand("results/prokka/{sample}/{sample}.gff", sample=SAMPLES)
+            expand("results/prokka/{sample}/{sample}.gff", sample=[pathlib.Path(f).stem for f in str(cfg.get("fasta", "")).split(",") if f.strip()])
         shell:
             r"""
             set -euxo pipefail
             mkdir -p results/prokka logs
             echo "Running Prokka annotations..."
-            for f in Intermediate/*.fasta; do
+            for f in {input.fastas}; do
                 base=$(basename "$f" .fasta)
                 echo "  → Annotating $base"
                 conda run -n genflow-prokka prokka \
@@ -240,8 +243,9 @@ if cfg["mode"] == "bacteria":
             """
 
     rule pangenome_roary:
+        """Run Roary to generate pangenome and core gene alignment."""
         input:
-            gffs=rules.annotate_prokka.output.gffs
+            gffs=expand("results/prokka/{sample}/{sample}.gff", sample=SAMPLES)
         output:
             "results/core_gene_alignment.aln"
         shell:
@@ -249,11 +253,19 @@ if cfg["mode"] == "bacteria":
             set -euo pipefail
             mkdir -p results/roary logs
             echo "Running Roary on annotated GFFs..."
-
             conda run -n genflow-roary roary \
                 -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1
 
-            cp results/roary/core_gene_alignment.aln {output}
+            # Detect alignment file (gzipped or not)
+            if [ -f results/roary/core_gene_alignment.aln ]; then
+                cp results/roary/core_gene_alignment.aln {output}
+            elif [ -f results/roary/core_gene_alignment.aln.gz ]; then
+                gunzip -c results/roary/core_gene_alignment.aln.gz > {output}
+            else
+                echo "Error: core_gene_alignment.aln not found. Check logs/roary.log for details."
+                exit 1
+            fi
+
             echo "Roary complete."
             """
 
@@ -308,20 +320,29 @@ rule build_tree:
     """Build a phylogenomic tree using FastTree or RAxML."""
     input: "results/aligned.fasta"
     output: "results/phylogenomic-tree.txt"
-    run:
-        if cfg.get("use_raxml", False):
-            print("Using RAxML (robust, slower)...")
-            shell(
-                f"conda run -n genflow-raxml raxml-ng --msa {input} "
-                f"--model GTR+G --threads {cfg['threads']} "
-                f"--tree pars{' --datatype AA' if not cfg['DNA_mode'] else ''} "
-                f"--outgroup 1 --prefix results/raxml_tree > logs/raxml.log 2>&1 || true"
-            )
-            shell("cp results/raxml_tree.raxml.bestTree {output}")
-        else:
-            print('Using FastTree (default)...')
-            fasttree_cmd = "FastTree -nt" if cfg["DNA_mode"] else "FastTree"
-            shell(f"conda run -n genflow-roary {fasttree_cmd} < {input} > {output}")
+    params:
+        use_raxml=lambda wildcards: str(cfg.get("use_raxml", False)),
+        threads=lambda wildcards: str(cfg["threads"]),
+        DNA_mode=lambda wildcards: str(cfg["DNA_mode"]),
+        datatype=lambda wildcards: " --datatype AA" if not cfg["DNA_mode"] else ""
+    shell:
+        r"""
+        set -euo pipefail
+        if [ "{params.use_raxml}" = "True" ]; then
+            echo "Using RAxML (robust, slower)..."
+            conda run -n genflow-raxml raxml-ng --msa {input} \
+                --model GTR+G --threads {params.threads} \
+                --tree pars{params.datatype} --outgroup 1 --prefix results/raxml_tree > logs/raxml.log 2>&1 || true
+            cp results/raxml_tree.raxml.bestTree {output}
+        else
+            echo "Using FastTree (default)..."
+            if [ "{params.DNA_mode}" = "True" ]; then
+                conda run -n genflow-roary FastTree -nt < {input} > {output}
+            else
+                conda run -n genflow-roary FastTree < {input} > {output}
+            fi
+        fi
+        """
 
 # ANI with pyANI
 if cfg.get("run_ani", False):
