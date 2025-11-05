@@ -1,5 +1,4 @@
 .snakemake/
-scripts/edirect/
 results/roary_1762313813/
 results/roary_1762313693/
 results/prokka/
