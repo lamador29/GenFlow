@@ -6,7 +6,7 @@ mcl_inflation: 10
 genomes: "Data/genomes.txt"
 fasta: null
 DNA_mode: false
-use_ncbi_download: false
+use_ncbi_download: true
 run_ani: false
 use_raxml: false
-mode: "bacteria"
+mode: "fungi"

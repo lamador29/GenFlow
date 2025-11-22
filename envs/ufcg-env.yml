@@ -1,0 +1,15 @@
+name: genflow-ufcg
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python>=3.7
+  - hmmer>=3.3.2
+  - blast>=2.12.0
+  - mafft>=7.490
+  - biopython>=1.79
+  - numpy>=1.21.6
+  - pandas>=1.3.5
+  - augustus>=3.4.0
+  - ufcg=1.0.6

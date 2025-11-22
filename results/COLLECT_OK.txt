@@ -1,2 +1,0 @@
-Data/genomeA.fasta
-Data/genomeB.fasta

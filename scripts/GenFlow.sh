@@ -70,6 +70,12 @@ if [[ ${#Fasta[@]} -eq 0 ]]; then
     Fasta=(*.fasta)
 fi
 
+# If the glob didn't match any files, bash will leave the literal '*.fasta' in the array.
+# In that case try to pick up FASTA files under Data/ as a sensible default.
+if [[ ${#Fasta[@]} -eq 1 && "${Fasta[0]}" == "*.fasta" ]]; then
+    Fasta=(Data/*.fasta)
+fi
+
 # Debugging: Print the genomes file being checked
 echo "Using genomes file: $genomes"
 
@@ -153,6 +159,8 @@ fi
 FASTA_CSV=$(IFS=,; echo "${Fasta[*]}")
 
 snakemake -s workflow/Snakefile \
+    --configfile "$CONFIG_FILE" \
+    --use-conda \
     --cores "$threads" \
     --printshellcmds \
     --rerun-incomplete \

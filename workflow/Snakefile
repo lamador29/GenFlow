@@ -13,8 +13,6 @@ config_defaults = {
     "use_ncbi_download": False,    # enable NCBI datasets+EDirect download block
     "run_ani": False,              # enable pyANI block (ANI matrix + heatmap assets)
 }
-
-# Merge defaults with user config
 for key, value in config_defaults.items():
     if key not in config:
         config[key] = value
@@ -133,7 +131,14 @@ tree_target = [
     f"{cfg['outdir']}/aligned.fasta",
     f"{cfg['outdir']}/phylogenomic-tree.txt",
     f"{cfg['outdir']}/COLLECT_OK.txt",
-] + [f"results/prokka/{s}/{s}.gff" for s in SAMPLES]
+]
+
+# Add mode-specific required files: prokka GFFs for bacteria, UFCG outputs for fungi
+if cfg.get("mode") == "bacteria":
+    tree_target += [f"results/prokka/{s}/{s}.gff" for s in SAMPLES]
+elif cfg.get("mode") == "fungi":
+    # Ensure UFCG output is produced when running fungi mode
+    tree_target += ["results/ufcg/core_genes.faa", "results/ufcg/core_genes.fna"]
 
 
 # Optional targets (only if enabled through config flags)
@@ -191,8 +196,16 @@ if use_ncbi:
             r"""
             set -euo pipefail
             echo "Downloading genomes from NCBI..."
+            # Clean the genomes list (remove comments and empty lines) into a safe temp file
+            mkdir -p Intermediate
+            grep -v '^\s*#' {cfg[genomes]} | sed '/^\s*$/d' > Intermediate/genomes.clean.txt
+            if [ ! -s Intermediate/genomes.clean.txt ]; then
+                echo "Error: No valid accessions found in {cfg[genomes]}" > logs/download.log
+                exit 1
+            fi
+
             conda run -n genflow-download-ani datasets download genome accession \
-                --inputfile {cfg[genomes]} > logs/download.log 2>&1
+                --inputfile Intermediate/genomes.clean.txt > logs/download.log 2>&1
             unzip -o 'ncbi_*.zip' >> logs/download.log 2>&1
             mkdir -p Intermediate
             mv ncbi_dataset/data/GC*/*.fna Intermediate/ || true
@@ -253,16 +266,30 @@ if cfg["mode"] == "bacteria":
             set -euo pipefail
             mkdir -p results/roary logs
             echo "Running Roary on annotated GFFs..."
+            # Run Roary; it may create a timestamped directory (results/roary_XXXXXXXX).
             conda run -n genflow-roary roary \
-                -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1
+                -e --mafft -p {cfg[threads]} -f results/roary {input.gffs} >> logs/roary.log 2>&1 || true
 
-            # Detect alignment file (gzipped or not)
+            # Prefer the plain results/roary folder if it contains the file, otherwise pick the
+            # most recent results/roary_* directory created by Roary.
             if [ -f results/roary/core_gene_alignment.aln ]; then
-                cp results/roary/core_gene_alignment.aln {output}
-            elif [ -f results/roary/core_gene_alignment.aln.gz ]; then
-                gunzip -c results/roary/core_gene_alignment.aln.gz > {output}
+                ROARY_DIR=results/roary
             else
-                echo "Error: core_gene_alignment.aln not found. Check logs/roary.log for details."
+                ROARY_DIR=$(ls -td results/roary_* 2>/dev/null | head -n1 || true)
+            fi
+
+            if [ -z "$ROARY_DIR" ]; then
+                echo "Error: No Roary output directory found. See logs/roary.log for details."
+                exit 1
+            fi
+
+            # Copy alignment (handle gzipped output)
+            if [ -f "$ROARY_DIR/core_gene_alignment.aln" ]; then
+                cp "$ROARY_DIR/core_gene_alignment.aln" {output}
+            elif [ -f "$ROARY_DIR/core_gene_alignment.aln.gz" ]; then
+                gunzip -c "$ROARY_DIR/core_gene_alignment.aln.gz" > {output}
+            else
+                echo "Error: core_gene_alignment.aln not found in $ROARY_DIR. Check logs/roary.log."
                 exit 1
             fi
 
@@ -285,25 +312,29 @@ elif cfg["mode"] == "fungi":
 
     rule run_ufcg:
         """Identify core fungal genes using the UFCG toolkit."""
-        input: "Intermediate/.collected"
+        # envs/ is located at repo root; Snakefile sits in workflow/, so use a relative path
+        conda: "../envs/ufcg-env.yml"
+        input: 
+            "Intermediate/.collected"
         output:
             faa="results/ufcg/core_genes.faa",
-            fna="results/ufcg/core_genes.fna"
+            fna="results/ufcg/core_genes.fna",
+            dir=directory("results/ufcg")
         shell:
             r"""
             set -euo pipefail
-            mkdir -p results/ufcg
+            mkdir -p {output.dir} logs
             echo "Running UFCG pipeline on fungal genomes..."
-            conda run -n genflow-roary ufcg pipeline \
-                -i Intermediate \
-                -o results/ufcg \
-                --threads {cfg[threads]} >> logs/ufcg.log 2>&1
+            ufcg pipeline -i Intermediate -o {output.dir} --threads {cfg[threads]} >> logs/ufcg.log 2>&1
+            echo "UFCG analysis complete."
             """
 
     rule align_ufcg:
         """Align fungal core genes using MAFFT (through Roary env)."""
-        input: "results/ufcg/core_genes.faa"
-        output: "results/aligned.fasta"
+        input: 
+            "results/ufcg/core_genes.faa"
+        output: 
+            "results/aligned.fasta"
         shell:
             r"""
             set -euo pipefail
@@ -328,6 +359,13 @@ rule build_tree:
     shell:
         r"""
         set -euo pipefail
+
+        # Decide whether the alignment is nucleotide or protein by scanning characters
+        # If the alignment (excluding header lines and gaps) contains only A,C,G,T,U,N (case-insensitive)
+        # then treat as nucleotide and run FastTree with -nt. Otherwise run protein FastTree.
+        ALN={input}
+        IS_NUC=$(grep -v '^>' "$ALN" | tr -d '\n' | tr -d '\-.' | tr -d '[:space:]' | sed 's/[ACGTUNacgtun]//g' | wc -c)
+
         if [ "{params.use_raxml}" = "True" ]; then
             echo "Using RAxML (robust, slower)..."
             conda run -n genflow-raxml raxml-ng --msa {input} \
@@ -336,10 +374,12 @@ rule build_tree:
             cp results/raxml_tree.raxml.bestTree {output}
         else
             echo "Using FastTree (default)..."
-            if [ "{params.DNA_mode}" = "True" ]; then
-                conda run -n genflow-roary FastTree -nt < {input} > {output}
+                if [ "$IS_NUC" -eq 0 ] || [ "{params.DNA_mode}" = "True" ]; then
+                echo "Detected nucleotide alignment -> running FastTree -nt"
+                conda run -n genflow-roary FastTree -nt {input} > {output}
             else
-                conda run -n genflow-roary FastTree < {input} > {output}
+                echo "Detected protein alignment -> running FastTree (AA)"
+                conda run -n genflow-roary FastTree {input} > {output}
             fi
         fi
         """
@@ -500,9 +540,9 @@ if cfg.get("run_anvio", False):
             echo "Aligning core sequences and building tree with FastTree..."
             conda run -n genflow-roary mafft --retree 1 --thread {cfg[threads]} --maxiterate 0 {input.fasta} > results/Anvio/core-aligned.fasta 2>> logs/mafft_core.log
             if [ "{cfg[DNA_mode]}" = "True" ]; then
-                conda run -n genflow-roary FastTree -nt < results/Anvio/core-aligned.fasta > results/Anvio/phylogenomic-tree.txt 2>> logs/tree_core.log
+                conda run -n genflow-roary FastTree -nt results/Anvio/core-aligned.fasta > results/Anvio/phylogenomic-tree.txt 2>> logs/tree_core.log
             else
-                conda run -n genflow-roary FastTree < results/Anvio/core-aligned.fasta > results/Anvio/phylogenomic-tree.txt 2>> logs/tree_core.log
+                conda run -n genflow-roary FastTree results/Anvio/core-aligned.fasta > results/Anvio/phylogenomic-tree.txt 2>> logs/tree_core.log
             fi
             echo "anvio tree complete."
             """
