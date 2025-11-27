@@ -118,11 +118,11 @@ fi
 # Ensure directories and configuration exist
 mkdir -p results Intermediate logs config
 
-CONFIG_FILE="config/config.yaml"
+CONFIG_FILE="config.yaml"
 
 # Create default config if missing
 if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo "No config/config.yaml found — creating default one..."
+    echo "No top-level config.yaml found — creating default one..."
     cat > "$CONFIG_FILE" <<'EOF'
 outdir: "results"
 threads: 4
@@ -162,7 +162,7 @@ snakemake -s workflow/Snakefile \
     --configfile "$CONFIG_FILE" \
     --use-conda \
     --cores "$threads" \
-    --printshellcmds \
+    --quiet \
     --rerun-incomplete \
     --latency-wait 60 \
     --config \

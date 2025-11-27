@@ -7,9 +7,9 @@ F: 0.8
 mcl_inflation: 10
 genomes: "Data/genomes.txt"
 fasta: null
-DNA_mode: true
-use_ncbi_download: true
+DNA_mode: false
+use_ncbi_download: false
 run_ani: false
 # Organism mode and tree options
 use_raxml: false       # true -> RAxML (robust, slower), false -> FastTree
-mode: "fungi"       # "bacteria" or "fungi"
+mode: "bacteria"       # "bacteria" or "fungi"
