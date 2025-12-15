@@ -1,0 +1,35 @@
+services:
+  genflow:
+    image: genflow
+    build:
+      context: ..
+      dockerfile: container/Dockerfile
+    container_name: genflow-workflow
+    volumes:
+      # Mount entire project directory
+      - ..:/workspace/GenFlow:rw
+      # Mount data directory for external data access
+      - ../Data:/workspace/GenFlow/Data:rw
+      # Mount results for output persistence
+      - ../results:/workspace/GenFlow/results:rw
+      # Mount logs for persistent logging
+      - ../logs:/workspace/GenFlow/logs:rw
+      # Mount intermediate for work files
+      - ../Intermediate:/workspace/GenFlow/Intermediate:rw
+    environment:
+      # Snakemake configuration
+      SNAKEMAKE_THREADS: "8"
+      SNAKEMAKE_CORES: "8"
+      # Conda configuration
+      CONDA_PKGS_DIRS: /opt/conda/pkgs
+      # Python settings
+      PYTHONUNBUFFERED: "1"
+    working_dir: /workspace/GenFlow
+    stdin_open: true
+    tty: true
+    networks:
+      - genflow-network
+
+networks:
+  genflow-network:
+    driver: bridge

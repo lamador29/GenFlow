@@ -4,13 +4,10 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - perl=5.26
-  - roary=3.13.0
+  - roary
   - blast
   - cd-hit
   - mcl
   - mafft
-  - parallel
   - fasttree
-  - coreutils
   - perl-bioperl
