@@ -11,3 +11,6 @@ dependencies:
   - mafft
   - fasttree
   - perl-bioperl
+  - perl-file-find-rule
+  - perl-file-slurper
+  - perl-data-dumper

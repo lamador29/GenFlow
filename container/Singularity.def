@@ -82,8 +82,15 @@ From: continuumio/miniconda3:latest
     conda create -y -n genflow-roary \
         -c bioconda -c conda-forge \
         roary \
+        blast \
+        cd-hit \
+        mcl \
         mafft \
         fasttree \
+        perl-bioperl \
+        perl-file-find-rule \
+        perl-file-slurper \
+        perl-data-dumper \
         && conda clean -afy
     
     # Create raxml environment

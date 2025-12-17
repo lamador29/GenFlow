@@ -1,6 +1,4 @@
-#!/bin/bash
 # Convert Docker image to Singularity container
-# This script converts the GenFlow Docker image to Singularity format
 
 set -e
 

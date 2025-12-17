@@ -1,5 +1,4 @@
 # GenFlow Docker Image
-# Multi-stage build for optimized final image
 
 FROM continuumio/miniconda3:latest AS builder
 
