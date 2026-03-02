@@ -2,7 +2,7 @@ BootStrap: docker
 From: continuumio/miniconda3:latest
 
 %labels
-    Description GenFlow - Bacterial and Fungal Genomic Workflow (Singularity Container)
+    Description GenFlow - Bacterial and Fungal Genomic Workflow (Singularity Container v2.0 - Single Environment)
 
 %help
     GenFlow Singularity Container
@@ -11,8 +11,10 @@ From: continuumio/miniconda3:latest
     - Prokka: Genome annotation
     - Roary: Pangenome analysis
     - UFCG: Fungal profiling
-    - RAxML/FastTree: Phylogenomic tree building
+    - IQ-TREE/RAxML: Phylogenomic tree building
     - pyANI: Average Nucleotide Identity
+    
+    All tools are in a single unified conda environment to avoid version conflicts.
     
     Usage:
         singularity run genflow.sif snakemake --cores 8 --use-conda --config fasta="Data/*.fasta"
@@ -48,70 +50,25 @@ From: continuumio/miniconda3:latest
     
     # Configure conda
     conda config --system --prepend channels conda-forge
+    conda config --system --prepend channels bioconda
     conda config --system --set auto_update_conda false
     
-    # Create base environment
-    echo "Creating genflow-base environment..."
-    conda create -y -n genflow-base \
-        snakemake=7.* \
-        python=3.10 \
-        && conda clean -afy
+    # Create unified genflow environment from single consolidated yml file
+    echo "Creating unified genflow environment..."
+    if [ -f "/workspace/GenFlow/envs/genflow-env.yml" ]; then
+        conda env create -f /workspace/GenFlow/envs/genflow-env.yml
+    else
+        echo "Error: genflow-env.yml not found"
+        exit 1
+    fi
     
-    # Create download-ani environment
-    echo "Creating genflow-download-ani environment..."
-    conda create -y -n genflow-download-ani \
-        -c bioconda -c conda-forge \
-        ncbi-datasets-cli \
-        average-nucleotide-identity \
-        r-base \
-        r-ggplot2 \
-        r-reshape2 \
-        r-gridextra \
-        r-viridis \
-        && conda clean -afy
-    
-    # Create prokka environment
-    echo "Creating genflow-prokka environment..."
-    conda create -y -n genflow-prokka \
-        -c bioconda -c conda-forge \
-        prokka \
-        && conda clean -afy
-    
-    # Create roary environment
-    echo "Creating genflow-roary environment..."
-    conda create -y -n genflow-roary \
-        -c bioconda -c conda-forge \
-        roary \
-        blast \
-        cd-hit \
-        mcl \
-        mafft \
-        fasttree \
-        perl-bioperl \
-        perl-file-find-rule \
-        perl-file-slurper \
-        perl-data-dumper \
-        && conda clean -afy
-    
-    # Create raxml environment
-    echo "Creating genflow-raxml environment..."
-    conda create -y -n genflow-raxml \
-        -c bioconda -c conda-forge \
-        raxml-ng \
-        && conda clean -afy
-    
-    # Create ufcg environment
-    echo "Creating ufcg environment..."
-    conda create -y -n ufcg \
-        -c bioconda -c conda-forge \
-        ufcg \
-        && conda clean -afy
+    # Clean up conda cache to reduce image size
+    conda clean -afy
     
     # Create working directories
     mkdir -p /workspace/GenFlow/Intermediate
     mkdir -p /workspace/GenFlow/results
     mkdir -p /workspace/GenFlow/logs
-    mkdir -p /workspace/GenFlow/tmp
     
     echo "GenFlow Singularity container initialized successfully"
 
@@ -137,15 +94,19 @@ From: continuumio/miniconda3:latest
         echo "Example workflows:"
         echo "  # Bacteria with local FASTA"
         echo "  singularity run genflow.sif snakemake --cores 8 --use-conda \\"
-        echo "    --config fasta='Data/genome1.fasta,Data/genome2.fasta'"
+        echo "    --config mode=bacteria fasta='Data/genome1.fasta,Data/genome2.fasta'"
         echo ""
         echo "  # Bacteria with NCBI download"
         echo "  singularity run genflow.sif snakemake --cores 8 --use-conda \\"
-        echo "    --config use_ncbi_download=true genomes='Data/short.txt'"
+        echo "    --config mode=bacteria use_ncbi_download=true genomes='Data/short.txt'"
         echo ""
         echo "  # Fungi (requires 4+ genomes)"
         echo "  singularity run genflow.sif snakemake --cores 8 --use-conda \\"
         echo "    --config mode=fungi genomes='Data/genomes.txt'"
+        echo ""
+        echo "  # With RAxML instead of IQ-TREE (default)"
+        echo "  singularity run genflow.sif snakemake --cores 8 --use-conda \\"
+        echo "    --config use_raxml=true fasta='Data/*.fasta'"
         echo ""
     else
         # Run the provided command
@@ -156,7 +117,7 @@ From: continuumio/miniconda3:latest
 %apprun snakemake
     #!/bin/bash
     source /opt/conda/etc/profile.d/conda.sh
-    conda activate genflow-base
+    conda activate genflow
     cd /workspace/GenFlow
     snakemake "$@"
 

@@ -7,7 +7,7 @@ config_defaults = {
     "genomes": "Data/genomes.txt",  # NCBI accessions file
     "DNA_mode": False,              # False=protein, True=DNA
     "use_ncbi_download": False,     # enable NCBI download
-    "use_raxml": False,             # False=FastTree, True=RAxML
+    "use_raxml": False,             # False=IQ-TREE, True=RAxML
     "run_ani": False,               # ANI analysis
 }
 for key, value in config_defaults.items():
@@ -280,7 +280,7 @@ rule ncbi_download:
             echo "Error: No valid accessions found in {cfg[genomes]}" >> logs/download.log
             exit 1
         fi
-        conda run -n genflow-download-ani datasets download genome accession \
+        conda run -n genflow datasets download genome accession \
             --inputfile Intermediate/genomes.clean.txt >> logs/download.log 2>&1
         unzip -o 'ncbi_*.zip' >> logs/download.log 2>&1
         mkdir -p Intermediate
@@ -387,7 +387,7 @@ if cfg["mode"] == "bacteria":
                 base=${{base%.fna}}
                 echo "[GenFlow] [Prokka] [$current/$total] Annotating $base"
                 echo "  → Annotating $base" >> logs/prokka.log
-                conda run -n genflow-prokka prokka \
+                conda run -n genflow prokka \
                     --outdir results/prokka/$base \
                     --prefix $base \
                     --centre X --compliant \
@@ -435,16 +435,16 @@ if cfg["mode"] == "bacteria":
             "results/core_gene_alignment.aln"
         shell:
             r"""
-            set -euo pipefail
             mkdir -p results/roary logs
             echo "[GenFlow] [$(date +%H:%M:%S)] Running Roary pangenome analysis..."
             GFFS=$(ls results/prokka_renamed/*.gff 2>/dev/null || true)
+            
             if [ -z "$GFFS" ]; then
                 echo "Error: No Prokka GFFs found under results/prokka_renamed." >> logs/roary.log
                 exit 1
             fi
-            conda run -n genflow-roary roary \
-                -e --mafft -p {cfg[threads]} -f results/roary $GFFS >> logs/roary.log 2>&1 || true
+            
+            conda run -n genflow-roary roary -e --mafft -p {cfg[threads]} -f results/roary $GFFS >> logs/roary.log 2>&1 || true
 
             if [ -f results/roary/core_gene_alignment.aln ]; then
                 ROARY_DIR=results/roary
@@ -476,7 +476,7 @@ if cfg["mode"] == "bacteria":
             r"""
             set -euo pipefail
             echo "[GenFlow] [$(date +%H:%M:%S)] Aligning core genes with MAFFT..."
-            conda run -n genflow-roary mafft --auto --quiet --thread {cfg[threads]} {input} > {output} 2>> logs/mafft_align.log
+            conda run -n genflow mafft --auto --quiet --thread {cfg[threads]} {input} > {output} 2>> logs/mafft_align.log
             echo "[GenFlow] [$(date +%H:%M:%S)] Core genes aligned with MAFFT"
             """
 
@@ -517,7 +517,7 @@ elif cfg["mode"] == "fungi":
                 mkdir -p "$workdir"
                 ln -sf "$(realpath "$f")" "$workdir/$(basename "$f")"
                 
-                if ! conda run -n genflow-ufcg ufcg profile -i "$workdir" -o "{output.profiles}" -s PRO -t {cfg[threads]} >> logs/ufcg.log 2>&1; then
+                if ! conda run -n genflow ufcg profile -i "$workdir" -o "{output.profiles}" -s PRO -t {cfg[threads]} >> logs/ufcg.log 2>&1; then
                     echo "[GenFlow] ERROR: ufcg profile failed for $sample" >> logs/ufcg.log
                     exit 1
                 fi
@@ -538,11 +538,11 @@ elif cfg["mode"] == "fungi":
             fi
             
             echo "[GenFlow] [$(date +%H:%M:%S)] Building phylogenomic tree with UFCG..."
-            TREE_METHOD="fasttree"
+            TREE_METHOD="iq-tree"
             if [ "{cfg[use_raxml]}" = "True" ]; then
                 TREE_METHOD="raxml"
             fi
-            if ! conda run -n genflow-ufcg ufcg tree -i {output.profiles} -l uid -o {output.tree_dir} -n genflow -t {cfg[threads]} -p $TREE_METHOD >> logs/ufcg.log 2>&1; then
+            if ! conda run -n genflow ufcg tree -i {output.profiles} -l uid -o {output.tree_dir} -n genflow -t {cfg[threads]} -p $TREE_METHOD >> logs/ufcg.log 2>&1; then
                 echo "[GenFlow] ERROR: ufcg tree failed" >> logs/ufcg.log
                 exit 1
             fi
@@ -650,7 +650,7 @@ rule rename_alignment:
         print(f"[GenFlow] [{end_time}] Alignment headers renamed")
 
 rule build_tree:
-    """Build phylogenomic tree (FastTree or RAxML) from alignment or UFCG output."""
+    """Build phylogenomic tree (IQ-TREE or RAxML) from alignment or UFCG output."""
     input: 
         aln="results/aligned.named.fasta",
         uid_to_label=lambda w: "results/ufcg/uid_to_label.json" if cfg.get("mode") == "fungi" else []
@@ -711,18 +711,20 @@ rule build_tree:
         if params.use_raxml == "True":
             start_time = datetime.now().strftime("%H:%M:%S")
             print(f"[GenFlow] [{start_time}] Building phylogenomic tree with RAxML...")
-            cmd = f"conda run -n genflow-raxml raxml-ng --msa {input.aln} --model GTR+G --threads {params.threads} --tree pars{datatype_arg} --redo --prefix results/raxml_tree"
+            cmd = f"conda run -n genflow raxml-ng --msa {input.aln} --model GTR+G --threads {params.threads} --tree pars{datatype_arg} --redo --prefix results/raxml_tree"
             subprocess.run(cmd, shell=True, check=True)
             import shutil
             shutil.copy("results/raxml_tree.raxml.bestTree", output[0])
         else:
             start_time = datetime.now().strftime("%H:%M:%S")
-            print(f"[GenFlow] [{start_time}] Building phylogenomic tree with FastTree...")
+            print(f"[GenFlow] [{start_time}] Building phylogenomic tree with IQ-TREE...")
             if is_nuc or params.DNA_mode == "True":
-                cmd = f"conda run -n genflow-roary FastTree -nt {input.aln} > {output[0]}"
+                cmd = f"conda run -n genflow iqtree -s {input.aln} -m GTR+G -T {params.threads} -B 1000 -alrt 1000 --prefix results/iqtree -quiet"
             else:
-                cmd = f"conda run -n genflow-roary FastTree {input.aln} > {output[0]}"
+                cmd = f"conda run -n genflow iqtree -s {input.aln} -m LG+G -T {params.threads} -B 1000 -alrt 1000 --prefix results/iqtree -quiet"
             subprocess.run(cmd, shell=True, check=True)
+            import shutil
+            shutil.copy("results/iqtree.contree", output[0])
         
         end_time = datetime.now().strftime("%H:%M:%S")
         print(f"[GenFlow] [{end_time}] Phylogenomic tree built")
@@ -766,7 +768,7 @@ if cfg.get("run_ani", False):
             rm -rf results/pyANI
             mkdir -p results/pyANI
             echo "[GenFlow] [$(date +%H:%M:%S)] Running ANI analysis..."
-            if ! conda run -n genflow-download-ani average_nucleotide_identity.py \
+            if ! conda run -n genflow average_nucleotide_identity.py \
                 -i results/fasta_files \
                 -o results/pyANI \
                 --labels {input.labels} \
@@ -794,7 +796,7 @@ if cfg.get("run_ani", False):
             set -euo pipefail
             echo "[GenFlow] Generating ANI heatmap with ggplot2..."
             if [ -s {input} ] && [ $(wc -c < {input}) -gt 100 ]; then
-                conda run -n genflow-download-ani Rscript scripts/ANI.R results/pyANI/ANIm_percentage_identity.tab
+                conda run -n genflow Rscript scripts/ANI.R results/pyANI/ANIm_percentage_identity.tab
                 echo "[GenFlow] ANI ggplot2 visualization complete"
             else
                 echo "[GenFlow] ANI analysis produced no valid data - skipping heatmap"
