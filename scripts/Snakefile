@@ -285,7 +285,7 @@ rule ncbi_download:
         unzip -o 'ncbi_*.zip' >> logs/download.log 2>&1
         mkdir -p Intermediate
         mv ncbi_dataset/data/GC*/*.fna Intermediate/ || true
-        rm -rf ncbi_dataset *.zip md5sum.txt README.md || true
+        rm -rf ncbi_dataset *.zip md5sum.txt || true
         echo "[GenFlow] [$(date +%H:%M:%S)] NCBI genomes downloaded"
         """
 
