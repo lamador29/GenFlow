@@ -148,8 +148,6 @@ def run_snakemake(cwd: Path, args: argparse.Namespace) -> None:
         'run_ani': str(args.run_ani).lower(),
         'genomes': args.genomes,
         'threads': str(args.threads),
-        'G': str(args.G),
-        'F': str(args.F),
         'DNA_mode': str(args.dna).lower(),
         'mcl_inflation': str(args.mcl_inflation),
         'edirect_dir': str(cwd / 'scripts' / 'edirect'),

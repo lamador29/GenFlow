@@ -4,6 +4,8 @@ This branch, `snakemake-fungi`, preserves the older GenFlow workflow with Docker
 
 ## Run with Conda
 
+These commands are intended for a Linux environment such as WSL. Run them from the repository root inside the WSL terminal, not from Windows PowerShell.
+
 Create or activate the environments described in `envs/`. The legacy workflow expects separate environments for Prokka, Roary, UFCG, RAxML, and ANI tools.
 
 For the bacterial accession test set in `Data/short.txt`:

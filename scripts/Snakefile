@@ -280,7 +280,7 @@ rule ncbi_download:
             echo "Error: No valid accessions found in {cfg[genomes]}" >> logs/download.log
             exit 1
         fi
-        conda run -n genflow-download-ani datasets download genome accession \
+        conda run -n genflow datasets download genome accession \
             --inputfile Intermediate/genomes.clean.txt >> logs/download.log 2>&1
         unzip -o 'ncbi_*.zip' >> logs/download.log 2>&1
         mkdir -p Intermediate
