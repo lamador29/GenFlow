@@ -119,16 +119,3 @@ mkdir -p results logs Intermediate
 ```
 
 La carpeta `Data/` no debe eliminarse porque contiene los archivos de entrada.
-
-## Usar Docker
-
-Docker es una alternativa de ejecucion. Requiere Docker Desktop con integracion WSL activada.
-
-Desde la raiz del proyecto, se ejecuta:
-
-```bash
-cd container
-docker compose up --build
-```
-
-Las instrucciones de Singularity se encuentran en `container/README.md`.
