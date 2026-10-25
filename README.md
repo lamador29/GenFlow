@@ -49,6 +49,12 @@ Roary y FastTree necesitan un entorno adicional. El entorno se crea con:
 conda env create -f envs/roary-env.yml
 ```
 
+En algunos equipos, el módulo Perl de Roary necesita reinstalarse dentro del entorno:
+
+```bash
+conda run -n genflow-roary cpanm --force --notest File::Find::Rule
+```
+
 Estos pasos se realizan una sola vez. En las siguientes sesiones, solo es necesario ejecutar `conda activate genflow`.
 
 ## Paso 3: ejecutar el ejemplo
