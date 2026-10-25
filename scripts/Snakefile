@@ -477,15 +477,15 @@ if cfg["mode"] == "bacteria":
             """
 
     rule align_mafft_bacteria:
-        """Align Roary core gene alignment with MAFFT."""
+        """Reuse the core alignment already produced by Roary."""
         input: "results/core_gene_alignment.aln"
         output: "results/aligned.fasta"
         shell:
             r"""
             set -euo pipefail
-            echo "[GenFlow] [$(date +%H:%M:%S)] Aligning core genes with MAFFT..."
-            conda run -n genflow-roary mafft --auto --quiet --thread {cfg[threads]} {input} > {output} 2>> logs/mafft_align.log
-            echo "[GenFlow] [$(date +%H:%M:%S)] Core genes aligned with MAFFT"
+            echo "[GenFlow] [$(date +%H:%M:%S)] Reusing Roary core alignment..."
+            cp {input} {output}
+            echo "[GenFlow] [$(date +%H:%M:%S)] Core alignment ready"
             """
 
 elif cfg["mode"] == "fungi":
