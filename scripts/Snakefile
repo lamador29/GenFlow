@@ -387,7 +387,7 @@ if cfg["mode"] == "bacteria":
                 base=${{base%.fna}}
                 echo "[GenFlow] [Prokka] [$current/$total] Annotating $base"
                 echo "  → Annotating $base" >> logs/prokka.log
-                conda run -n genflow-prokka prokka \
+                conda run -n genflow prokka \
                     --outdir results/prokka/$base \
                     --prefix $base \
                     --centre X --compliant \
