@@ -1,4 +1,5 @@
 .snakemake/
+CLAUDE.md
 results/
 results/roary_1762313813/
 results/roary_1762313693/
