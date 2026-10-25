@@ -446,14 +446,22 @@ if cfg["mode"] == "bacteria":
             conda run -n genflow-roary roary \
                 -e --mafft -p {cfg[threads]} -f results/roary $GFFS >> logs/roary.log 2>&1 || true
 
-            if [ -f results/roary/core_gene_alignment.aln ]; then
-                ROARY_DIR=results/roary
-            else
-                ROARY_DIR=$(ls -td results/roary_* 2>/dev/null | head -n1 || true)
-            fi
+            ROARY_DIR=""
+            for attempt in $(seq 1 120); do
+                if [ -f results/roary/core_gene_alignment.aln ]; then
+                    ROARY_DIR=results/roary
+                    break
+                fi
+                candidate=$(ls -td results/roary_* 2>/dev/null | head -n1 || true)
+                if [ -n "$candidate" ] && [ -f "$candidate/core_gene_alignment.aln" ]; then
+                    ROARY_DIR=$candidate
+                    break
+                fi
+                sleep 5
+            done
 
             if [ -z "$ROARY_DIR" ]; then
-                echo "Error: No Roary output directory found." >> logs/roary.log
+                echo "Error: Roary did not produce core_gene_alignment.aln within the wait period." >> logs/roary.log
                 exit 1
             fi
 
