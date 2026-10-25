@@ -1,30 +1,28 @@
 # GenFlow
 
-GenFlow analiza genomas y construye un arbol filogenomico. Estas instrucciones son para la version antigua del proyecto, en la rama `snakemake-fungi`. Esta version usa FastTree y conserva la opcion de Docker.
-
-La version nueva, basada en IQ-TREE, se encuentra en `snakemake-fungi-version-2`.
+GenFlow analiza genomas y construye un arbol filogenomico.
 
 ## Antes de empezar
 
-Necesitas:
+La persona usuaria necesita:
 
 - Windows con WSL, Linux o macOS.
 - Conda o Miniforge instalado.
-- Conexion a internet si vas a descargar genomas desde NCBI.
+- Conexion a internet si se descargan genomas desde NCBI.
 - Al menos 8 GB de espacio libre.
 
-Si usas Windows, abre una terminal de Ubuntu/WSL. No uses PowerShell para ejecutar estos comandos.
+En Windows, la ejecucion debe realizarse desde una terminal de Ubuntu/WSL. PowerShell no debe utilizarse para estos comandos.
 
 ## Paso 1: descargar el proyecto
 
-En la terminal, ejecuta:
+La persona usuaria puede descargar el proyecto con:
 
 ```bash
 git clone URL_DEL_REPOSITORIO
 cd GenFlow
 ```
 
-Si ya tienes la carpeta, solo entra en ella:
+Si la carpeta ya existe, la persona usuaria solo necesita entrar en ella:
 
 ```bash
 cd GenFlow
@@ -32,70 +30,70 @@ cd GenFlow
 
 ## Paso 2: preparar Conda
 
-Este comando crea el entorno principal con las herramientas necesarias para el ejemplo bacteriano:
+El siguiente comando crea el entorno principal con las herramientas necesarias para el ejemplo bacteriano:
 
 ```bash
 conda create -n genflow -c conda-forge -c bioconda \
   python=3.11 snakemake prokka mafft ncbi-datasets-cli
 ```
 
-Activa el entorno:
+La persona usuaria activa el entorno con:
 
 ```bash
 conda activate genflow
 ```
 
-Roary y FastTree necesitan un entorno adicional:
+Roary y FastTree necesitan un entorno adicional. La persona usuaria lo crea con:
 
 ```bash
 conda env create -f envs/roary-env.yml
 ```
 
-Estos pasos se hacen una sola vez. En las siguientes sesiones solo necesitas ejecutar `conda activate genflow`.
+Estos pasos se realizan una sola vez. En las siguientes sesiones, la persona usuaria solo necesita ejecutar `conda activate genflow`.
 
 ## Paso 3: ejecutar el ejemplo
 
-El archivo `Data/short.txt` contiene accesiones de NCBI listas para probar el programa. Ejecuta:
+El archivo `Data/short.txt` contiene accesiones de NCBI listas para probar el programa. La persona usuaria inicia el análisis con:
 
 ```bash
 python3 scripts/genflow.py -m bacteria -t 4 -d --genomes Data/short.txt
 ```
 
-Qué significa el comando:
+El comando utiliza las siguientes opciones:
 
 - `-m bacteria`: analiza genomas bacterianos.
 - `-t 4`: usa cuatro hilos del procesador.
 - `-d`: descarga los genomas desde NCBI.
 - `--genomes Data/short.txt`: indica dónde está la lista de accesiones.
 
-El programa descargará los genomas, los anotará, buscará genes compartidos, alineará esos genes y construirá el árbol.
+El programa descarga los genomas, los anota, busca genes compartidos, alinea esos genes y construye el arbol.
 
 ## Usar archivos FASTA propios
 
-Si ya tienes archivos FASTA, no necesitas usar `-d`. Escríbelos separados por comas:
+Cuando la persona usuaria ya tiene archivos FASTA, no necesita utilizar `-d`. Los archivos se indican separados por comas:
 
 ```bash
 python3 scripts/genflow.py -m bacteria -t 4 \
   --fasta "Data/INISA09F.fasta,Data/INISA10F.fasta,Data/INISA16F.fasta"
 ```
 
-Los archivos deben existir y no estar vacíos.
+Los archivos deben existir y no estar vacios.
 
 ## Paso 4: revisar los resultados
 
-Al terminar, el árbol debe estar en:
+Al terminar, el arbol debe encontrarse en:
 
 ```text
 results/phylogenomic-tree.txt
 ```
 
-Puedes comprobarlo con:
+La persona usuaria puede comprobarlo con:
 
 ```bash
 test -s results/phylogenomic-tree.txt && echo "Arbol creado correctamente"
 ```
 
-También se genera el alineamiento:
+El programa tambien genera el siguiente alineamiento:
 
 ```text
 results/aligned.named.fasta
@@ -105,7 +103,7 @@ Los mensajes de cada etapa se guardan en la carpeta `logs/`.
 
 ## Si aparece un error
 
-Primero revisa estos archivos:
+La persona usuaria debe revisar primero estos archivos:
 
 ```bash
 cat logs/download.log
@@ -113,24 +111,24 @@ cat logs/prokka.log
 cat logs/roary.log
 ```
 
-Si quieres empezar de nuevo, elimina solo los resultados generados:
+Para comenzar de nuevo, la persona usuaria puede eliminar solo los resultados generados:
 
 ```bash
 rm -rf .snakemake results logs Intermediate
 mkdir -p results logs Intermediate
 ```
 
-No elimines la carpeta `Data/`, porque contiene los archivos de entrada.
+La carpeta `Data/` no debe eliminarse porque contiene los archivos de entrada.
 
 ## Usar Docker
 
-Docker es una alternativa para esta version antigua. Requiere Docker Desktop con integracion WSL activada.
+Docker es una alternativa de ejecucion. Requiere Docker Desktop con integracion WSL activada.
 
-Desde la raiz del proyecto:
+Desde la raiz del proyecto, la persona usuaria ejecuta:
 
 ```bash
 cd container
 docker compose up --build
 ```
 
-Para instrucciones de Singularity, revisa `container/README.md`.
+Las instrucciones de Singularity se encuentran en `container/README.md`.
